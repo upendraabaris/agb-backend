@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "apis": [
+    {
+      "identifier": "doubletick",
+      "source": "@doubletick/v2.0#pw0hqm4gvoote",
+      "integrity": "sha512-Lh1Vplu0hkMFKV6eoWP4WiCl/RC9xw/DYiqgqJ9g/r784A4GetLclqOkV6w3N19ToOdv1kFACe+Fc9s2JdUO9w==",
+      "installerVersion": "6.1.2"
+    }
+  ]
+}
