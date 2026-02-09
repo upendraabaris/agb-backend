@@ -7,7 +7,7 @@ export const AdCategorySchema = gql`
       adCategories: [AdCategory]
       allAdCategories: [AdCategory]
       getAdCategory(id: ID!): AdCategory
-      getAdCategoryByName(name: String!): AdCategory
+      getAdCategoryByMasterId(categoryMasterId: ID!): [AdCategory]
     }
 
     type Mutation {

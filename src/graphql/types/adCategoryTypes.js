@@ -1,15 +1,14 @@
 // src/graphql/types/adCategoryTypes.js
 import { gql } from "apollo-server";
+import { AdCategoryMasterType } from "./adCategoryMasterTypes.js";
 
 export const AdCategoryType = gql`
+  ${AdCategoryMasterType}
   #graphql
   type AdCategory {
     id: ID!
-    name: String!
-    ad_slot: String!
+    categoryMasterId: AdCategoryMaster!
     ad_type: String!
-    position: String!
-    slot_number: Int!
     price: Float!
     priority: Int!
     duration_days: Int!
@@ -19,11 +18,8 @@ export const AdCategoryType = gql`
   }
 
   input AdCategoryInput {
-    name: String!
-    ad_slot: String!
+    categoryMasterId: ID!
     ad_type: String!
-    position: String!
-    slot_number: Int!
     price: Float!
     priority: Int!
     duration_days: Int!

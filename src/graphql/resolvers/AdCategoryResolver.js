@@ -48,7 +48,7 @@ export const Mutation = {
   createAdCategory: authenticate(["admin"])(
     async (_, { input }, { models }) => {
       try {
-        const existingCategory = await models.AdCategory.findOne({ categoryMasterId: input.categoryMasterId, ad_type: input.ad_type });
+        const existingCategory = await models.AdCategory.findOne({ categoryMasterId: input.categoryMasterId, ad_type: input.ad_type, price: input.price, duration_days: input.duration_days });
 
         if (existingCategory) {
           throw new Error("Ad category with this category master and ad_type already exists");
