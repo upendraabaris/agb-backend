@@ -75,7 +75,8 @@ const Server = async () => {
   app.use(cors(corsOptions));
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
-  app.use(bodyParser.json());
+  app.use(bodyParser.json({ limit: "100mb" }));
+  app.use(bodyParser.urlencoded({ limit: "100mb", extended: true }));
   app.use("/uploads", express.static(path.join(__dirname, "./uploads")));
 
   app.post("/api/ccavRequestHandler", function (request, response) {
@@ -89,9 +90,27 @@ const Server = async () => {
   app.use(
     "/api/graphql",
     cors(corsOptions),
-    bodyParser.json({ limit: "50mb" }),
-    bodyParser.urlencoded({ limit: "50mb", extended: true }),
-    graphqlUploadExpress(),
+    // Capture raw body for debugging (verify) and parse json/urlencoded as before
+    bodyParser.json({
+      limit: "200mb",
+      verify: (req, res, buf) => {
+        try {
+          req.rawBody = buf.toString();
+        } catch (e) {
+          req.rawBody = undefined;
+        }
+      },
+    }),
+    bodyParser.urlencoded({ limit: "200mb", extended: true }),
+    // small dev-only logger to help diagnose empty/malformed GraphQL bodies
+    (req, res, next) => {
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[graphql-debug] Headers:", req.headers);
+        console.log("[graphql-debug] Raw body:", req.rawBody);
+      }
+      next();
+    },
+    graphqlUploadExpress({ maxFileSize: 200 * 1024 * 1024, maxFiles: 10 }),
     expressMiddleware(server, {
       context: async ({ req }) => {
         const token = req.headers.authorization;

@@ -12,8 +12,11 @@ import { AccountDetailsSchema } from "./schema/accountDetailsSchema.js";
 import { EnquerySchema } from "./schema/enquerySchema.js";
 import { Ad_hocSchema } from "./schema/ad_hocSchema.js";
 import { AdCategorySchema } from "./schema/adCategorySchema.js";
-import { AdCategoryMasterSchema } from "./schema/adCategoryMasterSchema.js";
+import { AdTierMasterSchema } from "./schema/adTierMasterSchema.js";
+import { AdTierProductCategoryMappingSchema } from "./schema/adTierProductCategoryMappingSchema.js";
 import { SlotSchema } from "./schema/slotSchema.js";
+import { AdsMasterSchema } from "./schema/adsMasterSchema.js";
+import { AdCampaignSchema } from "./schema/adCampaignSchema.js";
 import { WishlistSchema } from "./schema/wishlistSchema.js";
 import { ProductSchema } from "./schema/productSchema.js";
 import { SeriesProductSchema } from "./schema/seriesProductSchema.js";
@@ -35,6 +38,7 @@ import { ProductHomeOrderSchema } from "./schema/productHomeOrderSchema.js";
 import { ProductClassSchema } from "./schema/productClassSchema.js";
 import { StateSchema } from "./schema/stateSchema.js";
 import { SuperSellerProductSchema } from "./schema/superSellerSchema.js";
+import { CategoryRequestSchema } from "./schema/categoryRequestSchema.js";
 
 export const RootSchema = gql`
   scalar Upload
@@ -63,8 +67,11 @@ export const typeDefs = [
   Ad_hocSchema,
   WishlistSchema,
   AdCategorySchema,
-  AdCategoryMasterSchema,
+  AdTierMasterSchema,
+  AdTierProductCategoryMappingSchema,
   SlotSchema,
+  AdsMasterSchema,
+  AdCampaignSchema,
   ProductSchema,
   SeriesProductSchema,
   TMTSeriesProductSchema,
@@ -85,4 +92,6 @@ export const typeDefs = [
   ProductClassSchema,
   StateSchema,
   SuperSellerProductSchema
+  ,
+  CategoryRequestSchema
 ];

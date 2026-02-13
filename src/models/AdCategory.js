@@ -4,7 +4,7 @@ const Schema = mongoose.Schema;
 const adCategorySchema = new Schema({
   categoryMasterId: {
     type: Schema.Types.ObjectId,
-    ref: "AdCategoryMaster",
+    ref: "AdTierMaster",
     required: true
   },
   ad_type: {

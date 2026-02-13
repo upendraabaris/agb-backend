@@ -21,8 +21,11 @@ import SiteContent from "./SiteContent.js";
 import HomePageSlider from "./HomePageslider.js";
 import Ads from "./Ads.js";
 import AdCategory from "./AdCategory.js";
-import AdCategoryMaster from "./AdCategoryMaster.js";
+import AdTierMaster from "./AdTierMaster.js";
+import AdTierProductCategoryMapping from "./AdTierProductCategoryMapping.js";
 import Slot from "./Slot.js";
+import AdsMaster from "./AdsMaster.js";
+import AdCampaign from "./AdCampaign.js";
 import Order from "./Order.js";
 import TMTMaster from "./TmtMaster.js";
 import Review from "./Review.js";
@@ -37,6 +40,9 @@ import Bill from "./BillGenerate.js";
 import SellerBill from "./SellerBill.js";
 import ProductClass from "./ProductClass.js";
 import SuperSellerProduct from "./SuperSellerProduct.js";
+import CategoryRequest from "./CategoryRequest.js";
+import CategoryRequestMedia from "./CategoryRequestMedia.js";
+import CategoryRequestDuration from "./CategoryRequestDuration.js";
 
 export default {
   User,
@@ -61,8 +67,11 @@ export default {
   HomePageSlider,
   Ads,
   AdCategory,
-  AdCategoryMaster,
+  AdTierMaster,
+  AdTierProductCategoryMapping,
   Slot,
+  AdsMaster,
+  AdCampaign,
   Order,
   TMTMaster,
   Review,
@@ -77,4 +86,7 @@ export default {
   SellerBill,
   ProductClass,
   SuperSellerProduct,
+  CategoryRequest,
+  CategoryRequestMedia,
+  CategoryRequestDuration,
 };

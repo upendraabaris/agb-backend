@@ -8,6 +8,7 @@ export const CategoryType = gql`
     name: String!
     image: String
     sliderImage: String
+    adTierId: AdTierMaster
     description: String!
     parent: Category
     children: [Category]

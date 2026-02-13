@@ -24,6 +24,7 @@ export const CategorySchema = gql`
       description: String!
       parent: ID
       order: Int
+      adTierId: ID
     ): Category
     updateCategory(
       id: ID!
@@ -33,6 +34,7 @@ export const CategorySchema = gql`
       parent: ID
       image: String
       order: Int
+      adTierId: ID
     ): Category!
     deleteCategory(id: ID!): Category!
     updateCategory1(id: ID!, file: Upload, sliderImage: String): Category

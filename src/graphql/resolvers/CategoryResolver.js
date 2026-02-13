@@ -69,7 +69,7 @@ const deleteChildren = async (categoryId, _, { models }) => {
 
 export const Mutation = {
   createCategory: authenticate(["admin"])(
-    async (_, { name, file, description, parent, order }, { models }) => {
+    async (_, { name, file, description, parent, order, adTierId }, { models }) => {
       try {
         const result = await processFile(file);
         const responseData = {
@@ -83,6 +83,7 @@ export const Mutation = {
           parent,
           order,
           image: filepath,
+          adTierId,
         });
         return await newCategory.save();
       } catch (error) {
@@ -93,7 +94,7 @@ export const Mutation = {
   updateCategory: authenticate(["admin"])(
     async (
       _,
-      { id, name, file, description, parent, image, order },
+      { id, name, file, description, parent, image, order, adTierId },
       { models }
     ) => {
       try {
@@ -111,6 +112,7 @@ export const Mutation = {
           parent,
           image,
           order,
+          adTierId,
         };
         if (filepath) {
           updateFields.image = filepath;
@@ -180,5 +182,9 @@ export const Category = {
   },
   children: async (category, args, { models }) => {
     return await models.Category.find({ parent: category.id });
+  },
+  adTierId: async (category, _, { models }) => {
+    if (!category.adTierId) return null;
+    return await models.AdTierMaster.findById(category.adTierId);
   },
 };

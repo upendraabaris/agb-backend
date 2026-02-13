@@ -21,6 +21,10 @@ const CategorySchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    adTierId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "AdTierMaster",
+    },
     parent: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Category",

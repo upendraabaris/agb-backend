@@ -79,6 +79,10 @@ import { Mutation as SiteContentMutation } from "./resolvers/SiteContentResolver
 
 import { Query as AdsQuery } from "./resolvers/AdsResolver.js";
 import { Mutation as AdsMutation } from "./resolvers/AdsResolver.js";
+import { Query as AdsMasterQuery } from "./resolvers/AdsMasterResolver.js";
+import { Mutation as AdsMasterMutation } from "./resolvers/AdsMasterResolver.js";
+import { Query as AdCampaignQuery } from "./resolvers/AdCampaignResolver.js";
+import { Mutation as AdCampaignMutation } from "./resolvers/AdCampaignResolver.js";
 
 import { Inventory } from "./resolvers/InventoryResolver.js";
 import { Query as InventoryQuery } from "./resolvers/InventoryResolver.js";
@@ -132,14 +136,19 @@ import { Query as SuperSellerQuery } from "./resolvers/SuperSellerProductResolve
 import { Mutation as SuperSellerMutation } from "./resolvers/SuperSellerProductResolver.js";
 
 // import { Query as AdCategoryQuery, Mutation as AdCategoryMutation } from "./resolvers/AdCategoryResolver.js";
+// AdCategoryResolver is still used for `AdCategory` entity; legacy AdCategoryMaster resolver removed
 import { Query as AdCategoryQuery } from "./resolvers/AdCategoryResolver.js";
 import { Mutation as AdCategoryMutation } from "./resolvers/AdCategoryResolver.js";
 
-import { Query as AdCategoryMasterQuery } from "./resolvers/AdCategoryMasterResolver.js";
-import { Mutation as AdCategoryMasterMutation } from "./resolvers/AdCategoryMasterResolver.js";
+import { Query as AdTierMasterQuery } from "./resolvers/AdTierMasterResolver.js";
+import { Mutation as AdTierMasterMutation } from "./resolvers/AdTierMasterResolver.js";
+import { Query as AdTierProductCategoryMappingQuery } from "./resolvers/AdTierProductCategoryMappingResolver.js";
+import { Mutation as AdTierProductCategoryMappingMutation } from "./resolvers/AdTierProductCategoryMappingResolver.js";
 
 import { Query as SlotQuery } from "./resolvers/SlotResolver.js";
 import { Mutation as SlotMutation } from "./resolvers/SlotResolver.js";
+import { Query as CategoryRequestQuery } from "./resolvers/CategoryRequestResolver.js";
+import { Mutation as CategoryRequestMutation } from "./resolvers/CategoryRequestResolver.js";
 
 export const resolvers = {
   Upload: GraphQLUpload,
@@ -164,6 +173,8 @@ export const resolvers = {
     ...HomePageSliderQuery,
     ...SiteContentQuery,
     ...AdsQuery,
+    ...AdsMasterQuery,
+    ...AdCampaignQuery,
     ...InventoryQuery,
     ...OrderQuery,
     ...TMTMasterQuery,
@@ -178,8 +189,10 @@ export const resolvers = {
     ...StateQuery,
     ...SuperSellerQuery,
     ...AdCategoryQuery,
-    ...AdCategoryMasterQuery,
+    ...AdTierMasterQuery,
+    ...AdTierProductCategoryMappingQuery,
     ...SlotQuery,
+    ...CategoryRequestQuery,
   },
   Mutation: {
     ...UserMutation,
@@ -202,6 +215,8 @@ export const resolvers = {
     ...HomePageSliderMutation,
     ...SiteContentMutation,
     ...AdsMutation,
+    ...AdsMasterMutation,
+    ...AdCampaignMutation,
     ...InventoryMutation,
     ...OrderMutation,
     ...TMTMasterMutation,
@@ -216,8 +231,11 @@ export const resolvers = {
     ...StateMutation,
     ...SuperSellerMutation,
     ...AdCategoryMutation,
-    ...AdCategoryMasterMutation,
+    ...AdTierMasterMutation,
+    ...AdTierProductCategoryMappingMutation,
     ...SlotMutation
+    ,
+    ...CategoryRequestMutation
   },
 
   Subscription: {

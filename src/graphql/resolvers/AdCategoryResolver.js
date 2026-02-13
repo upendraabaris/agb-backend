@@ -48,6 +48,9 @@ export const Mutation = {
   createAdCategory: authenticate(["admin"])(
     async (_, { input }, { models }) => {
       try {
+        if (!input || !input.categoryMasterId) {
+          throw new Error('AdCategory input missing required field: categoryMasterId');
+        }
         const existingCategory = await models.AdCategory.findOne({ categoryMasterId: input.categoryMasterId, ad_type: input.ad_type, price: input.price, duration_days: input.duration_days });
 
         if (existingCategory) {
