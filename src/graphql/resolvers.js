@@ -150,6 +150,8 @@ import { Mutation as SlotMutation } from "./resolvers/SlotResolver.js";
 import { Query as CategoryRequestQuery } from "./resolvers/CategoryRequestResolver.js";
 import { Mutation as CategoryRequestMutation } from "./resolvers/CategoryRequestResolver.js";
 
+import { Query as AdReportingQuery } from "./resolvers/AdReportingResolver.js";
+
 export const resolvers = {
   Upload: GraphQLUpload,
   Query: {
@@ -193,6 +195,7 @@ export const resolvers = {
     ...AdTierProductCategoryMappingQuery,
     ...SlotQuery,
     ...CategoryRequestQuery,
+    ...AdReportingQuery,
   },
   Mutation: {
     ...UserMutation,
