@@ -6,6 +6,9 @@ const CategoryRequestSchema = new mongoose.Schema({
   tier_id: { type: mongoose.Schema.Types.ObjectId, ref: 'AdTierMaster', required: true },
   request_date: { type: Date, default: Date.now },
   status: { type: String, enum: ['pending', 'approved', 'rejected', 'running'], default: 'pending' },
+  approved_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  approved_date: { type: Date },
+  rejection_reason: { type: String }
 }, { timestamps: true });
 
 const CategoryRequest = mongoose.model('CategoryRequest', CategoryRequestSchema);
