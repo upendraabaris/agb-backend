@@ -13,10 +13,6 @@ import { EnquerySchema } from "./schema/enquerySchema.js";
 import { Ad_hocSchema } from "./schema/ad_hocSchema.js";
 import { AdCategorySchema } from "./schema/adCategorySchema.js";
 import { AdTierMasterSchema } from "./schema/adTierMasterSchema.js";
-import { AdTierProductCategoryMappingSchema } from "./schema/adTierProductCategoryMappingSchema.js";
-import { SlotSchema } from "./schema/slotSchema.js";
-import { AdsMasterSchema } from "./schema/adsMasterSchema.js";
-import { AdCampaignSchema } from "./schema/adCampaignSchema.js";
 import { WishlistSchema } from "./schema/wishlistSchema.js";
 import { ProductSchema } from "./schema/productSchema.js";
 import { SeriesProductSchema } from "./schema/seriesProductSchema.js";
@@ -68,10 +64,6 @@ export const typeDefs = [
   WishlistSchema,
   AdCategorySchema,
   AdTierMasterSchema,
-  AdTierProductCategoryMappingSchema,
-  SlotSchema,
-  AdsMasterSchema,
-  AdCampaignSchema,
   ProductSchema,
   SeriesProductSchema,
   TMTSeriesProductSchema,
@@ -91,7 +83,6 @@ export const typeDefs = [
   ProductHomeOrderSchema,
   ProductClassSchema,
   StateSchema,
-  SuperSellerProductSchema
-  ,
+  SuperSellerProductSchema,
   CategoryRequestSchema
 ];

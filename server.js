@@ -103,10 +103,11 @@ const Server = async () => {
     }),
     bodyParser.urlencoded({ limit: "200mb", extended: true }),
     // small dev-only logger to help diagnose empty/malformed GraphQL bodies
+    // enable detailed logging only when DEBUG_GRAPHQL=true to avoid noisy console output
     (req, res, next) => {
-      if (process.env.NODE_ENV !== "production") {
-        console.log("[graphql-debug] Headers:", req.headers);
-        console.log("[graphql-debug] Raw body:", req.rawBody);
+      if (process.env.DEBUG_GRAPHQL === 'true') {
+        console.log('[graphql-debug] Headers:', req.headers);
+        console.log('[graphql-debug] Raw body:', req.rawBody);
       }
       next();
     },
