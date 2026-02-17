@@ -52,25 +52,53 @@ export const Query = {
 
                 const tierName = tierRequests[0]?.tier_id?.name || 'Unknown';
 
-                // Get pricing for this tier
-                const adCategories = await models.AdCategory.find({
+                // Get request IDs for this tier
+                const requestIds = tierRequests.map(req => req._id);
+
+                // Get all media slots for these requests
+                const mediaSlots = await models.CategoryRequestMedia.find({
+                    category_request_id: { $in: requestIds }
+                }).lean();
+
+                // Count banner and stamp slots
+                let bannerCount = 0;
+                let stampCount = 0;
+
+                for (const media of mediaSlots) {
+                    if (media.slot.startsWith('banner')) {
+                        bannerCount++;
+                    } else if (media.slot.startsWith('stamp')) {
+                        stampCount++;
+                    }
+                }
+
+                // Get pricing for this tier (separate prices for banner and stamp)
+                const bannerPrice = await models.AdCategory.findOne({
                     categoryMasterId: tierId,
+                    ad_type: 'banner',
                     is_active: true
                 }).lean();
 
-                // Calculate revenue (using average price if multiple ad types exist)
-                const avgPrice = adCategories.length > 0
-                    ? adCategories.reduce((sum, ac) => sum + ac.price, 0) / adCategories.length
-                    : 0;
+                const stampPrice = await models.AdCategory.findOne({
+                    categoryMasterId: tierId,
+                    ad_type: 'stamp',
+                    is_active: true
+                }).lean();
 
-                const tierRevenue = avgPrice * tierRequests.length;
+                // Calculate revenue based on actual slots purchased
+                const tierRevenue =
+                    (bannerCount * (bannerPrice?.price || 0)) +
+                    (stampCount * (stampPrice?.price || 0));
+
                 totalRevenue += tierRevenue;
 
                 breakdown.push({
                     tierId,
                     tierName,
                     revenue: tierRevenue,
-                    adCount: tierRequests.length
+                    adCount: bannerCount + stampCount,
+                    bannerCount,
+                    stampCount
                 });
             }
 
@@ -151,18 +179,25 @@ export const Query = {
                 tierMap[tierId].totalAdsSold += requestMedia.length;
             }
 
-            // Calculate revenue for each tier
+            // Calculate revenue for each tier using correct pricing
             for (const tierId in tierMap) {
-                const adCategories = await models.AdCategory.find({
+                // Get pricing for this tier (separate prices for banner and stamp)
+                const bannerPrice = await models.AdCategory.findOne({
                     categoryMasterId: tierId,
+                    ad_type: 'banner',
                     is_active: true
                 }).lean();
 
-                const avgPrice = adCategories.length > 0
-                    ? adCategories.reduce((sum, ac) => sum + ac.price, 0) / adCategories.length
-                    : 0;
+                const stampPrice = await models.AdCategory.findOne({
+                    categoryMasterId: tierId,
+                    ad_type: 'stamp',
+                    is_active: true
+                }).lean();
 
-                tierMap[tierId].revenue = avgPrice * tierMap[tierId].totalAdsSold;
+                // Calculate revenue based on actual slots purchased
+                tierMap[tierId].revenue =
+                    (tierMap[tierId].bannerCount * (bannerPrice?.price || 0)) +
+                    (tierMap[tierId].stampCount * (stampPrice?.price || 0));
             }
 
             return Object.values(tierMap);
@@ -459,10 +494,10 @@ export const Query = {
             const result = [];
 
             for (const request of categoryRequests) {
-                // Get durations for this request
+                // Get durations for this request (approved ads are automatically running)
                 const durations = await models.CategoryRequestDuration.find({
                     category_request_id: request._id,
-                    status: 'running'
+                    status: { $in: ['approved', 'running'] }
                 }).lean();
 
                 // Get media for this request
@@ -522,10 +557,10 @@ export const Query = {
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
             const sellerId = decoded._id;
 
-            // Get completed/rejected category requests
+            // Get all category requests for this seller (excluding only rejected ones)
+            // Note: 'completed' status doesn't exist in CategoryRequest enum
             const categoryRequests = await models.CategoryRequest.find({
-                seller_id: sellerId,
-                status: { $in: ['completed', 'rejected'] }
+                seller_id: sellerId
             })
                 .populate('category_id', 'name')
                 .populate('tier_id', 'name')
@@ -535,9 +570,11 @@ export const Query = {
             const result = [];
 
             for (const request of categoryRequests) {
-                // Get durations for this request
+                // Get durations that are NOT currently active (exclude approved and running)
+                // Since approved ads are automatically running, past ads should exclude both
                 const durations = await models.CategoryRequestDuration.find({
-                    category_request_id: request._id
+                    category_request_id: request._id,
+                    status: { $nin: ['approved', 'running'] }  // Exclude active ads
                 }).lean();
 
                 for (const duration of durations) {
@@ -590,10 +627,10 @@ export const Query = {
             const result = [];
 
             for (const request of categoryRequests) {
-                // Get running durations
+                // Get running durations (approved ads are automatically running)
                 const durations = await models.CategoryRequestDuration.find({
                     category_request_id: request._id,
-                    status: 'running'
+                    status: { $in: ['approved', 'running'] }
                 }).lean();
 
                 for (const duration of durations) {

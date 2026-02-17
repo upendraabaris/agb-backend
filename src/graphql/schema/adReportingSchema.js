@@ -10,6 +10,8 @@ export const AdReportingSchema = gql`
     tierId: ID!
     revenue: Float!
     adCount: Int!
+    bannerCount: Int!
+    stampCount: Int!
   }
 
   type RevenueReport {
