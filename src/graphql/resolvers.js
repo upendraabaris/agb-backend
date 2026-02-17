@@ -142,6 +142,8 @@ import { Mutation as AdTierMasterMutation } from "./resolvers/AdTierMasterResolv
 import { Query as CategoryRequestQuery } from "./resolvers/CategoryRequestResolver.js";
 import { Mutation as CategoryRequestMutation } from "./resolvers/CategoryRequestResolver.js";
 
+import { Query as AdReportingQuery } from "./resolvers/AdReportingResolver.js";
+
 export const resolvers = {
   Upload: GraphQLUpload,
   Query: {
@@ -181,6 +183,7 @@ export const resolvers = {
     ...AdCategoryQuery,
     ...AdTierMasterQuery,
     ...CategoryRequestQuery,
+    ...AdReportingQuery,
   },
   Mutation: {
     ...UserMutation,
