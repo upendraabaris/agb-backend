@@ -8,6 +8,9 @@ export const CategoryRequestSchema = gql`
     tier_id: ID
     request_date: String
     status: String
+    approved_by: ID
+    approved_date: String
+    rejection_reason: String
     createdAt: String
     updatedAt: String
   }
@@ -68,9 +71,41 @@ export const CategoryRequestSchema = gql`
     durations: [SellerAdDuration!]!
   }
 
+  type SellerInfo {
+    id: ID!
+    name: String
+    email: String
+  }
+
+  type AdApprovalRequest {
+    id: ID!
+    seller_id: ID!
+    sellerName: String
+    sellerEmail: String
+    category_id: ID!
+    categoryName: String
+    tier_id: ID!
+    status: String!
+    medias: [SellerAdMedia!]!
+    durations: [SellerAdDuration!]!
+    createdAt: String
+    updatedAt: String
+  }
+
+  type ApprovalResponse {
+    success: Boolean!
+    message: String
+    data: CategoryRequest
+  }
+
   type CategoryTier {
     id: ID!
     name: String!
+  }
+
+  type SlotStatus {
+    slot: String!        # "banner_1", "banner_2", etc.
+    available: Boolean!  # true if available, false if booked
   }
 
   type CategoryWithSlots {
@@ -82,6 +117,9 @@ export const CategoryRequestSchema = gql`
     adTierId: ID
     availableSlots: Int!
     bookedSlots: Int!
+    bookedBanner: Int
+    bookedStamp: Int
+    slotStatuses: [SlotStatus!]
     tierId: CategoryTier
   }
 
@@ -100,6 +138,17 @@ export const CategoryRequestSchema = gql`
     adCategories: [AdCategoryPricing!]!
   }
 
+  type ApprovedAd {
+    id: ID!
+    sellerName: String!
+    sellerEmail: String!
+    categoryId: ID!
+    categoryName: String!
+    medias: [SellerAdMedia!]!
+    durations: [SellerAdDuration!]!
+    createdAt: String
+  }
+
   input CategoryRequestMediaInput {
     slot: String!
     media_type: String
@@ -115,6 +164,16 @@ export const CategoryRequestSchema = gql`
     medias: [CategoryRequestMediaInput!]!
   }
 
+  input ApproveAdRequestInput {
+    requestId: ID!
+    start_date: String!
+  }
+
+  input RejectAdRequestInput {
+    requestId: ID!
+    rejection_reason: String
+  }
+
   extend type Query {
     getMyAds: [SellerAdInfo!]!
     getCategoryRequestsBySeller(sellerId: ID!): [CategoryRequest]
@@ -122,11 +181,18 @@ export const CategoryRequestSchema = gql`
     getCategoryRequestDurations(requestId: ID!): [CategoryRequestDuration]
     getCategoriesWithAvailableSlots: [CategoryWithSlots!]!
     getCategoryPricing(categoryId: ID!): CategoryPricingInfo
+    getAdRequestsForApproval(status: String): [AdApprovalRequest!]!
+    getApprovedAdsByCategory(categoryId: ID, categoryName: String): [ApprovedAd!]!
+    getBannerAds: [ApprovedAd!]!
+    getStampAds: [ApprovedAd!]!
   }
 
   extend type Mutation {
     createCategoryRequest(input: CreateCategoryRequestInput!): CategoryRequest
     approveCategoryRequest(id: ID!, slot: String!, start_date: String!, end_date: String!, duration_days: Int): CategoryRequestDuration
     rejectCategoryRequest(id: ID!): CategoryRequest
+    approveAdRequest(input: ApproveAdRequestInput!): ApprovalResponse!
+    rejectAdRequest(input: RejectAdRequestInput!): ApprovalResponse!
   }
 `;
+

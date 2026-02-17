@@ -79,10 +79,6 @@ import { Mutation as SiteContentMutation } from "./resolvers/SiteContentResolver
 
 import { Query as AdsQuery } from "./resolvers/AdsResolver.js";
 import { Mutation as AdsMutation } from "./resolvers/AdsResolver.js";
-import { Query as AdsMasterQuery } from "./resolvers/AdsMasterResolver.js";
-import { Mutation as AdsMasterMutation } from "./resolvers/AdsMasterResolver.js";
-import { Query as AdCampaignQuery } from "./resolvers/AdCampaignResolver.js";
-import { Mutation as AdCampaignMutation } from "./resolvers/AdCampaignResolver.js";
 
 import { Inventory } from "./resolvers/InventoryResolver.js";
 import { Query as InventoryQuery } from "./resolvers/InventoryResolver.js";
@@ -142,11 +138,7 @@ import { Mutation as AdCategoryMutation } from "./resolvers/AdCategoryResolver.j
 
 import { Query as AdTierMasterQuery } from "./resolvers/AdTierMasterResolver.js";
 import { Mutation as AdTierMasterMutation } from "./resolvers/AdTierMasterResolver.js";
-import { Query as AdTierProductCategoryMappingQuery } from "./resolvers/AdTierProductCategoryMappingResolver.js";
-import { Mutation as AdTierProductCategoryMappingMutation } from "./resolvers/AdTierProductCategoryMappingResolver.js";
 
-import { Query as SlotQuery } from "./resolvers/SlotResolver.js";
-import { Mutation as SlotMutation } from "./resolvers/SlotResolver.js";
 import { Query as CategoryRequestQuery } from "./resolvers/CategoryRequestResolver.js";
 import { Mutation as CategoryRequestMutation } from "./resolvers/CategoryRequestResolver.js";
 
@@ -175,8 +167,6 @@ export const resolvers = {
     ...HomePageSliderQuery,
     ...SiteContentQuery,
     ...AdsQuery,
-    ...AdsMasterQuery,
-    ...AdCampaignQuery,
     ...InventoryQuery,
     ...OrderQuery,
     ...TMTMasterQuery,
@@ -192,8 +182,6 @@ export const resolvers = {
     ...SuperSellerQuery,
     ...AdCategoryQuery,
     ...AdTierMasterQuery,
-    ...AdTierProductCategoryMappingQuery,
-    ...SlotQuery,
     ...CategoryRequestQuery,
     ...AdReportingQuery,
   },
@@ -218,8 +206,6 @@ export const resolvers = {
     ...HomePageSliderMutation,
     ...SiteContentMutation,
     ...AdsMutation,
-    ...AdsMasterMutation,
-    ...AdCampaignMutation,
     ...InventoryMutation,
     ...OrderMutation,
     ...TMTMasterMutation,
@@ -235,9 +221,6 @@ export const resolvers = {
     ...SuperSellerMutation,
     ...AdCategoryMutation,
     ...AdTierMasterMutation,
-    ...AdTierProductCategoryMappingMutation,
-    ...SlotMutation
-    ,
     ...CategoryRequestMutation
   },
 

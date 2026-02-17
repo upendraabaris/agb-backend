@@ -16,10 +16,10 @@ const adCategorySchema = new Schema({
     type: Number,
     required: true
   },
-  priority: {
-    type: Number,
-    required: true
-  },
+  // priority: {
+  //   type: Number,
+  //   required: true
+  // },
   duration_days: {
     type: Number,
     required: true

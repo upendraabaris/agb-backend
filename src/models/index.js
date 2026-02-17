@@ -22,10 +22,6 @@ import HomePageSlider from "./HomePageslider.js";
 import Ads from "./Ads.js";
 import AdCategory from "./AdCategory.js";
 import AdTierMaster from "./AdTierMaster.js";
-import AdTierProductCategoryMapping from "./AdTierProductCategoryMapping.js";
-import Slot from "./Slot.js";
-import AdsMaster from "./AdsMaster.js";
-import AdCampaign from "./AdCampaign.js";
 import Order from "./Order.js";
 import TMTMaster from "./TmtMaster.js";
 import Review from "./Review.js";
@@ -68,10 +64,6 @@ export default {
   Ads,
   AdCategory,
   AdTierMaster,
-  AdTierProductCategoryMapping,
-  Slot,
-  AdsMaster,
-  AdCampaign,
   Order,
   TMTMaster,
   Review,

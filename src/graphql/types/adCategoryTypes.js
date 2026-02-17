@@ -21,7 +21,6 @@ export const AdCategoryType = gql`
     categoryMasterId: ID
     ad_type: String!
     price: Float!
-    priority: Int!
     duration_days: Int!
     is_active: Boolean
   }
