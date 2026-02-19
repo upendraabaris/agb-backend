@@ -36,8 +36,19 @@ export const CategoryRequestSchema = gql`
     start_date: String
     end_date: String
     status: String
+    start_preference: String
+    quarters_covered: [String]
+    pricing_breakdown: [PricingBreakdown]
+    total_price: Float
     createdAt: String
     updatedAt: String
+  }
+
+  type PricingBreakdown {
+    quarter: String
+    days: Int
+    rate_per_day: Float
+    subtotal: Float
   }
 
   type SellerAdMedia {
@@ -105,7 +116,8 @@ export const CategoryRequestSchema = gql`
 
   type SlotStatus {
     slot: String!        # "banner_1", "banner_2", etc.
-    available: Boolean!  # true if available, false if booked
+    available: Boolean!  # true when the slot can be booked now
+    freeDate: String     # if the slot is currently booked this is when it becomes free (ISO)
   }
 
   type CategoryWithSlots {
@@ -161,6 +173,7 @@ export const CategoryRequestSchema = gql`
   input CreateCategoryRequestInput {
     category_id: ID!
     duration_days: Int
+    start_preference: String
     medias: [CategoryRequestMediaInput!]!
   }
 

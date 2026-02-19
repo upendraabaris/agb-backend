@@ -137,9 +137,10 @@ export const Query = {
 
       // Fetch all requests and durations once for efficiency (per-category counting)
       const allRequests = await models.CategoryRequest.find().select('_id category_id').lean();
+      // include end_date so we can compute when a slot becomes free
       const allDurations = await models.CategoryRequestDuration.find({
         status: { $in: ['running', 'approved'] }
-      }).select('category_request_id slot').lean();
+      }).select('category_request_id slot end_date').lean();
 
       // Build maps for fast lookup per category
       const requestsByCategory = {};
@@ -151,6 +152,9 @@ export const Query = {
 
       const result = categories.map(cat => {
         if (!cat.adTierId) {
+          // still provide slotStatuses array so UI can render consistently
+          const slotNames = ['banner_1', 'banner_2', 'banner_3', 'banner_4', 'stamp_1', 'stamp_2', 'stamp_3', 'stamp_4'];
+          const defaultStatuses = slotNames.map((s) => ({ slot: s, available: true, freeDate: null }));
           return {
             id: cat._id?.toString(),
             name: cat.name || 'Unknown',
@@ -160,7 +164,8 @@ export const Query = {
             adTierId: null,
             tierId: null,
             availableSlots: 8,
-            bookedSlots: 0
+            bookedSlots: 0,
+            slotStatuses: defaultStatuses
           };
         }
 
@@ -185,14 +190,29 @@ export const Query = {
         const availableSlots = Math.max(0, 8 - bookedCount);
 
         const slotNames = ['banner_1', 'banner_2', 'banner_3', 'banner_4', 'stamp_1', 'stamp_2', 'stamp_3', 'stamp_4'];
-        const bookedSlots = allDurations
-          .filter(d => requestIdsForCat.includes(d.category_request_id.toString()))
-          .map(d => d.slot);
-
-        const slotStatuses = slotNames.map(slotName => ({
-          slot: slotName,
-          available: !bookedSlots.includes(slotName)
-        }));
+        // group durations for slots in this category
+        const slotStatuses = slotNames.map(slotName => {
+          const matches = allDurations.filter(d =>
+            requestIdsForCat.includes(d.category_request_id.toString()) &&
+            d.slot === slotName
+          );
+          if (matches.length === 0) {
+            return { slot: slotName, available: true, freeDate: null };
+          }
+          // if there are booked entries, take the latest end_date
+          let latestEnd = null;
+          matches.forEach(d => {
+            if (d.end_date) {
+              const ed = new Date(d.end_date);
+              if (!latestEnd || ed > latestEnd) latestEnd = ed;
+            }
+          });
+          return {
+            slot: slotName,
+            available: false,
+            freeDate: latestEnd ? latestEnd.toISOString() : null
+          };
+        });
 
         return {
           id: cat._id?.toString(),
