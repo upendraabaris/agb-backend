@@ -229,7 +229,23 @@ export const Query = {
           bookedSlots: bookedCount,
           bookedBanner: bookedBannerCount,
           bookedStamp: bookedStampCount,
-          slotStatuses: slotStatuses
+          slotStatuses: slotStatuses,
+          // load 90‑day pricing for this tier (both banner & stamp if present)
+          pricing90: (async () => {
+            try {
+              const adCats90 = await models.AdCategory.find({ categoryMasterId: tierId, duration_days: 90 }).lean();
+              return adCats90.map(ac => ({
+                id: ac._id?.toString(),
+                ad_type: ac.ad_type || 'unknown',
+                price: ac.price || 0,
+                priority: ac.priority || 0,
+                duration_days: ac.duration_days || 90,
+              }));
+            } catch (e) {
+              console.error('[CategoryRequestResolver] pricing90 load error', e);
+              return [];
+            }
+          })()
         };
       });
 

@@ -133,6 +133,8 @@ export const CategoryRequestSchema = gql`
     bookedStamp: Int
     slotStatuses: [SlotStatus!]
     tierId: CategoryTier
+    # price entries specifically for 90‑day duration; helps frontend show default cost
+    pricing90: [AdCategoryPricing!]
   }
 
   type AdCategoryPricing {
