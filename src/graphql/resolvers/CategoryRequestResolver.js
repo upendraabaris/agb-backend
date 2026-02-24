@@ -150,7 +150,8 @@ export const Query = {
         requestsByCategory[catId].push(req._id.toString());
       });
 
-      const result = categories.map(cat => {
+      // map categories asynchronously so we can await pricing lookup
+      const result = await Promise.all(categories.map(async cat => {
         if (!cat.adTierId) {
           // still provide slotStatuses array so UI can render consistently
           const slotNames = ['banner_1', 'banner_2', 'banner_3', 'banner_4', 'stamp_1', 'stamp_2', 'stamp_3', 'stamp_4'];
@@ -162,6 +163,7 @@ export const Query = {
             description: cat.description || '',
             order: cat.order || 0,
             adTierId: null,
+            parent: cat.parent?.toString() || null,
             tierId: null,
             availableSlots: 8,
             bookedSlots: 0,
@@ -214,6 +216,21 @@ export const Query = {
           };
         });
 
+        // compute 90-day pricing for this tier before returning
+        let pricing90 = [];
+        try {
+          const adCats90 = await models.AdCategory.find({ categoryMasterId: tierId, duration_days: 90 }).lean();
+          pricing90 = adCats90.map(ac => ({
+            id: ac._id?.toString(),
+            ad_type: ac.ad_type || 'unknown',
+            price: ac.price || 0,
+            priority: ac.priority || 0,
+            duration_days: ac.duration_days || 90,
+          }));
+        } catch (e) {
+          console.error('[CategoryRequestResolver] pricing90 load error', e);
+        }
+
         return {
           id: cat._id?.toString(),
           name: cat.name || 'Unknown',
@@ -221,6 +238,7 @@ export const Query = {
           description: cat.description || '',
           order: cat.order || 0,
           adTierId: tierId,
+          parent: cat.parent?.toString() || null,
           tierId: {
             id: tierId,
             name: cat.adTierId.name || 'Unknown Tier'
@@ -230,29 +248,129 @@ export const Query = {
           bookedBanner: bookedBannerCount,
           bookedStamp: bookedStampCount,
           slotStatuses: slotStatuses,
-          // load 90‑day pricing for this tier (both banner & stamp if present)
-          pricing90: (async () => {
-            try {
-              const adCats90 = await models.AdCategory.find({ categoryMasterId: tierId, duration_days: 90 }).lean();
-              return adCats90.map(ac => ({
-                id: ac._id?.toString(),
-                ad_type: ac.ad_type || 'unknown',
-                price: ac.price || 0,
-                priority: ac.priority || 0,
-                duration_days: ac.duration_days || 90,
-              }));
-            } catch (e) {
-              console.error('[CategoryRequestResolver] pricing90 load error', e);
-              return [];
-            }
-          })()
+          pricing90
         };
-      });
+      }));
 
       return result.filter(cat => cat !== null);
     } catch (err) {
       console.error('[CategoryRequestResolver] getCategoriesWithAvailableSlots error:', err);
       return [];
+    }
+  },
+
+  // Check whether slots for a given request are free around a proposed start date
+  checkSlotAvailability: async (_, { requestId, start_date }, { models }) => {
+
+    try {
+      const durations = await models.CategoryRequestDuration.find({ category_request_id: requestId }).lean();
+      if (!durations || durations.length === 0) {
+        return { available: true, details: [] };
+      }
+
+      // Fetch the category_id for this request
+      const categoryRequest = await models.CategoryRequest.findById(durations[0].category_request_id).lean();
+      const categoryId = categoryRequest?.category_id?.toString();
+
+      // determine candidate startDate using provided value or preference
+      let startDate = start_date ? new Date(start_date) : null;
+      const pref = durations[0].start_preference || 'today';
+      if (!startDate) {
+        if (pref === 'next_quarter') {
+          const now = new Date();
+          const m = now.getUTCMonth();
+          const y = now.getUTCFullYear();
+          if (m <= 2) startDate = new Date(Date.UTC(y, 3, 1));
+          else if (m <= 5) startDate = new Date(Date.UTC(y, 6, 1));
+          else if (m <= 8) startDate = new Date(Date.UTC(y, 9, 1));
+          else startDate = new Date(Date.UTC(y + 1, 0, 1));
+        } else {
+          startDate = new Date();
+        }
+      }
+
+      // helper functions for quarter computation
+      const getQuarterLabel = (date) => {
+        const m = date.getUTCMonth() + 1;
+        if (m >= 1 && m <= 3) return 'Q1';
+        if (m >= 4 && m <= 6) return 'Q2';
+        if (m >= 7 && m <= 9) return 'Q3';
+        return 'Q4';
+      };
+      const getQuarterEnd = (date) => {
+        const q = getQuarterLabel(date);
+        const year = date.getUTCFullYear();
+        if (q === 'Q1') return new Date(Date.UTC(year, 2, 31, 23,59,59,999));
+        if (q === 'Q2') return new Date(Date.UTC(year, 5, 30, 23,59,59,999));
+        if (q === 'Q3') return new Date(Date.UTC(year, 8, 30, 23,59,59,999));
+        return new Date(Date.UTC(year, 11, 31, 23,59,59,999));
+      };
+      const addDays = (date, days) => {
+        const d = new Date(date);
+        d.setUTCDate(d.getUTCDate() + days);
+        return d;
+      };
+      const splitIntervalByQuarter = (start, days) => {
+        const segments = [];
+        let current = new Date(start);
+        let remaining = days;
+        while (remaining > 0) {
+          const quarterEnd = getQuarterEnd(current);
+          const diff = Math.ceil((quarterEnd - current) / (1000 * 60 * 60 * 24)) + 1;
+          const take = Math.min(diff, remaining);
+          segments.push({ quarter: getQuarterLabel(current), days: take });
+          current = addDays(current, take);
+          remaining -= take;
+        }
+        return segments;
+      };
+
+      // compute quarters this request will cover
+      const candidateDays = durations[0]?.duration_days || 30;
+      const candidateQuarters = splitIntervalByQuarter(startDate, candidateDays).map(s => s.quarter);
+      console.log('[checkSlotAvailability] Candidate quarters:', candidateQuarters);
+
+      const details = [];
+      let overallAvailable = true;
+
+      for (const dur of durations) {
+
+        // Only check for conflicts within the same category
+        const conflict = await models.CategoryRequestDuration.findOne({
+          slot: dur.slot,
+          category_request_id: { $ne: requestId },
+          status: { $in: ['running', 'approved'] },
+          quarters_covered: { $in: candidateQuarters },
+        }).lean();
+
+        // Fetch the category_id for the conflicting duration's request
+        let isSameCategory = false;
+        if (conflict) {
+          const conflictRequest = await models.CategoryRequest.findById(conflict.category_request_id).lean();
+          if (conflictRequest && conflictRequest.category_id?.toString() === categoryId) {
+            isSameCategory = true;
+          }
+        }
+
+        // Only declare hasConflict once
+        const hasSlotConflict = !!conflict && isSameCategory;
+        if (hasSlotConflict) overallAvailable = false;
+        details.push({
+          slot: dur.slot,
+          startDate: startDate.toISOString(),
+          endDate: addDays(startDate, candidateDays - 1).toISOString(),
+          conflict: hasSlotConflict,
+          conflictId: (hasSlotConflict && conflict?._id?.toString()) || null,
+          conflictQuarters: (hasSlotConflict && conflict?.quarters_covered?.join(',')) || null
+        });
+
+        // ...handled above
+      }
+
+      return { available: overallAvailable, details };
+    } catch (e) {
+      console.error('[checkSlotAvailability] error', e);
+      return { available: false, details: [] };
     }
   },
 
@@ -514,7 +632,11 @@ export const Query = {
               duration_days: d.duration_days,
               start_date: d.start_date ? new Date(d.start_date).toISOString() : null,
               end_date: d.end_date ? new Date(d.end_date).toISOString() : null,
-              status: d.status
+              status: d.status,
+              start_preference: d.start_preference,
+              quarters_covered: d.quarters_covered || [],
+              pricing_breakdown: d.pricing_breakdown || [],
+              total_price: d.total_price || 0
             })),
             createdAt: req.createdAt ? new Date(req.createdAt).toISOString() : null,
             updatedAt: req.updatedAt ? new Date(req.updatedAt).toISOString() : null
@@ -735,7 +857,6 @@ export const Query = {
     }
   }
 };
-
 export const Mutation = {
   createCategoryRequest: authenticate(["seller"])(
     async (_, { input }, { models, req }) => {
@@ -804,15 +925,21 @@ export const Mutation = {
         const savedMedias = await models.CategoryRequestMedia.insertMany(medias, { session });
         console.log('[createCategoryRequest] Media entries created:', savedMedias.length);
 
-        // Create duration entries for each media slot
+        // Create duration entries for each media slot; include start_preference and pricing fields
         const durations = input.medias.map(m => ({
           category_request_id: req_obj[0]._id,
           slot: m.slot,
           duration_days: input.duration_days || 30,
           status: 'pending',
           start_date: null,
-          end_date: null
+          end_date: null,
+          start_preference: input.start_preference || 'today',
+          quarters_covered: [],
+          pricing_breakdown: [],
+          total_price: 0
         }));
+
+        console.log('[createCategoryRequest] Duration data to save:', JSON.stringify(durations, null, 2));
 
         const savedDurations = await models.CategoryRequestDuration.insertMany(durations, { session });
         console.log('[createCategoryRequest] Duration entries created:', savedDurations.length);
@@ -881,37 +1008,148 @@ export const Mutation = {
 
       console.log('[approveAdRequest] Admin:', adminId, 'Request:', requestId);
 
-      // Find the request
-      const categoryRequest = await models.CategoryRequest.findById(requestId);
+      // Find the request and populate category/tier for pricing
+      const categoryRequest = await models.CategoryRequest.findById(requestId).populate('category_id').populate('tier_id');
       if (!categoryRequest) throw new Error('Ad request not found');
       if (categoryRequest.status !== 'pending') throw new Error('Request is not in pending status');
 
-      // Get duration_days from any duration record
-      const durationRecord = await models.CategoryRequestDuration.findOne({
+      // load all durations for this request
+      const durations = await models.CategoryRequestDuration.find({
         category_request_id: requestId
-      });
+      }).lean();
 
-      if (!durationRecord) throw new Error('Duration records not found');
+      console.log('[approveAdRequest] Durations found:', durations.length);
+      console.log('[approveAdRequest] First duration:', JSON.stringify(durations[0]));
 
-      const duration_days = durationRecord.duration_days || 30;
-      const startDate = new Date(start_date);
-      const endDate = new Date(startDate);
-      endDate.setDate(endDate.getDate() + duration_days);
+      if (!durations || durations.length === 0) {
+        throw new Error('No duration records found for this request');
+      }
 
-      console.log('[approveAdRequest] Start:', startDate, 'End:', endDate, 'Duration:', duration_days);
+      // determine start date using provided value or preference of first duration
+      let startDate = start_date ? new Date(start_date) : null;
+      const pref = durations[0].start_preference || 'today';
+      console.log('[approveAdRequest] Start preference:', pref, 'Provided date:', start_date);
+      if (!startDate) {
+        if (pref === 'next_quarter') {
+          // beginning of next quarter from now
+          const now = new Date();
+          const m = now.getUTCMonth();
+          const y = now.getUTCFullYear();
+          if (m <= 2) startDate = new Date(Date.UTC(y, 3, 1));
+          else if (m <= 5) startDate = new Date(Date.UTC(y, 6, 1));
+          else if (m <= 8) startDate = new Date(Date.UTC(y, 9, 1));
+          else startDate = new Date(Date.UTC(y + 1, 0, 1));
+        } else {
+          startDate = new Date();
+        }
+      }
 
-      // Update all duration records for this request
-      await models.CategoryRequestDuration.updateMany(
-        { category_request_id: requestId },
-        {
-          $set: {
-            start_date: startDate,
-            end_date: endDate,
-            status: 'approved'
-          }
-        },
-        { session }
-      );
+      // helper functions for pricing computation
+      const getNextQuarterStart = (date) => {
+        const m = date.getUTCMonth();
+        const year = date.getUTCFullYear();
+        if (m <= 2) return new Date(Date.UTC(year, 3, 1));
+        if (m <= 5) return new Date(Date.UTC(year, 6, 1));
+        if (m <= 8) return new Date(Date.UTC(year, 9, 1));
+        return new Date(Date.UTC(year + 1, 0, 1));
+      };
+      const addDays = (date, days) => {
+        const d = new Date(date);
+        d.setUTCDate(d.getUTCDate() + days);
+        return d;
+      };
+      const getQuarterLabel = (date) => {
+        const m = date.getUTCMonth() + 1;
+        if (m >= 1 && m <= 3) return 'Q1';
+        if (m >= 4 && m <= 6) return 'Q2';
+        if (m >= 7 && m <= 9) return 'Q3';
+        return 'Q4';
+      };
+      const getQuarterEnd = (date) => {
+        const q = getQuarterLabel(date);
+        const year = date.getUTCFullYear();
+        if (q === 'Q1') return new Date(Date.UTC(year, 2, 31, 23,59,59,999));
+        if (q === 'Q2') return new Date(Date.UTC(year, 5, 30, 23,59,59,999));
+        if (q === 'Q3') return new Date(Date.UTC(year, 8, 30, 23,59,59,999));
+        return new Date(Date.UTC(year, 11, 31, 23,59,59,999));
+      };
+      const splitIntervalByQuarter = (start, days) => {
+        const segments = [];
+        let current = new Date(start);
+        let remaining = days;
+        while (remaining > 0) {
+          const quarterEnd = getQuarterEnd(current);
+          const diff = Math.ceil((quarterEnd - current) / (1000 * 60 * 60 * 24)) + 1;
+          const take = Math.min(diff, remaining);
+          segments.push({ quarter: getQuarterLabel(current), days: take });
+          current = addDays(current, take);
+          remaining -= take;
+        }
+        return segments;
+      };
+
+      // fetch pricing for this tier
+      const tierId = categoryRequest.tier_id?._id;
+      console.log('[approveAdRequest] Tier ID:', tierId);
+      console.log('[approveAdRequest] Full tier object:', JSON.stringify(categoryRequest.tier_id));
+      
+      const pricingEntries = tierId
+        ? await models.AdCategory.find({ categoryMasterId: tierId }).lean()
+        : [];
+
+      console.log('[approveAdRequest] Pricing entries found:', pricingEntries.length);
+      if (pricingEntries.length > 0) {
+        console.log('[approveAdRequest] Sample pricing entry:', JSON.stringify(pricingEntries[0]));
+      }
+
+      // update each duration with computed pricing and quarters
+      for (const dur of durations) {
+        const durStart = startDate;
+        const durEnd = addDays(durStart, (dur.duration_days || 30) - 1);
+
+        // find matching pricing for this slot's type
+        const adType = dur.slot.split('_')[0] || 'banner';
+        let adCat = pricingEntries.find(
+          (ac) => ac.ad_type === adType && ac.duration_days === dur.duration_days
+        );
+        if (!adCat) adCat = pricingEntries.find((ac) => ac.ad_type === adType) || pricingEntries[0] || {};
+        
+        const baseDuration = adCat.duration_days || dur.duration_days || 30;
+        const basePrice = adCat.price || 0;
+        const ratePerDay = Math.round((basePrice / baseDuration) * 100) / 100;
+        
+        // split duration by quarters and compute breakdown
+        const segmentsStart = dur.start_preference === 'next_quarter' ? getNextQuarterStart(durStart) : durStart;
+        const segments = splitIntervalByQuarter(segmentsStart, dur.duration_days || baseDuration);
+        const breakdown = segments.map(s => ({
+          quarter: s.quarter,
+          days: s.days,
+          rate_per_day: ratePerDay,
+          subtotal: Math.round(ratePerDay * s.days)
+        }));
+        const total = breakdown.reduce((sum, b) => sum + b.subtotal, 0);
+        const quarters = [...new Set(breakdown.map(b => b.quarter))];
+
+        console.log(`[approveAdRequest] Slot ${dur.slot}: breakdown=${JSON.stringify(breakdown)}, total=${total}, quarters=${quarters.join(',')}`);
+        console.log(`[approveAdRequest] Updating duration ${dur._id} with status=approved, total_price=${total}`);
+
+        const updateResult = await models.CategoryRequestDuration.findByIdAndUpdate(
+          dur._id,
+          {
+            $set: {
+              start_date: durStart,
+              end_date: durEnd,
+              status: 'approved',
+              quarters_covered: quarters,
+              pricing_breakdown: breakdown,
+              total_price: total
+            }
+          },
+          { session, new: true }
+        );
+
+        console.log(`[approveAdRequest] Update result:`, JSON.stringify(updateResult));
+      }
 
       // Update category request status
       const updatedRequest = await models.CategoryRequest.findByIdAndUpdate(
@@ -929,7 +1167,7 @@ export const Mutation = {
       await session.commitTransaction();
       session.endSession();
 
-      console.log('[approveAdRequest] Approved successfully');
+      console.log('[approveAdRequest] Approved successfully with pricing breakdown');
 
       return {
         success: true,
@@ -1009,5 +1247,6 @@ export const Mutation = {
     }
   })
 };
+
 
 export default { Query, Mutation };
