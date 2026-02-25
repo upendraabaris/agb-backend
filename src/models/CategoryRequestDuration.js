@@ -7,6 +7,20 @@ const CategoryRequestDurationSchema = new mongoose.Schema({
   start_date: { type: Date },
   end_date: { type: Date },
   status: { type: String, enum: ['pending', 'running', 'completed'], default: 'pending' },
+  // start preference indicates whether the ad should start immediately or from next quarter
+  start_preference: { type: String, enum: ['today', 'next_quarter'], default: 'today' },
+  // which quarters (Q1..Q4) this duration spans
+  quarters_covered: [{ type: String }],
+  // pricing breakdown per quarter
+  pricing_breakdown: [{
+    quarter: { type: String },
+    start: { type: Date },
+    end: { type: Date },
+    days: { type: Number },
+    rate_per_day: { type: Number },
+    subtotal: { type: Number }
+  }],
+  total_price: { type: Number, default: 0 },
 }, { timestamps: true });
 
 const CategoryRequestDuration = mongoose.model('CategoryRequestDuration', CategoryRequestDurationSchema);

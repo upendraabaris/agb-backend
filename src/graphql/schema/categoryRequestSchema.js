@@ -21,9 +21,9 @@ export const CategoryRequestSchema = gql`
     slot: String!
     media_type: String
     mobile_image_url: String
-    mobile_redirect_url: String
     desktop_image_url: String
-    desktop_redirect_url: String
+    redirect_url: String
+    url_type: String
     createdAt: String
     updatedAt: String
   }
@@ -36,8 +36,21 @@ export const CategoryRequestSchema = gql`
     start_date: String
     end_date: String
     status: String
+    start_preference: String
+    quarters_covered: [String]
+    pricing_breakdown: [PricingBreakdown]
+    total_price: Float
     createdAt: String
     updatedAt: String
+  }
+
+  type PricingBreakdown {
+    quarter: String
+    start: String
+    end: String
+    days: Int
+    rate_per_day: Float
+    subtotal: Float
   }
 
   type SellerAdMedia {
@@ -46,8 +59,8 @@ export const CategoryRequestSchema = gql`
     media_type: String
     mobile_image_url: String
     desktop_image_url: String
-    mobile_redirect_url: String
-    desktop_redirect_url: String
+    redirect_url: String
+    url_type: String
   }
 
   type SellerAdDuration {
@@ -57,6 +70,10 @@ export const CategoryRequestSchema = gql`
     start_date: String
     end_date: String
     status: String
+    start_preference: String
+    quarters_covered: [String]
+    pricing_breakdown: [PricingBreakdown]
+    total_price: Float
   }
 
   type SellerAdInfo {
@@ -98,6 +115,19 @@ export const CategoryRequestSchema = gql`
     data: CategoryRequest
   }
 
+  type SlotAvailabilityDetail {
+    slot: String!
+    startDate: String
+    endDate: String
+    conflict: Boolean!
+    conflictId: ID
+  }
+
+  type SlotAvailability {
+    available: Boolean!
+    details: [SlotAvailabilityDetail!]!
+  }
+
   type CategoryTier {
     id: ID!
     name: String!
@@ -105,7 +135,8 @@ export const CategoryRequestSchema = gql`
 
   type SlotStatus {
     slot: String!        # "banner_1", "banner_2", etc.
-    available: Boolean!  # true if available, false if booked
+    available: Boolean!  # true when the slot can be booked now
+    freeDate: String     # if the slot is currently booked this is when it becomes free (ISO)
   }
 
   type CategoryWithSlots {
@@ -115,12 +146,15 @@ export const CategoryRequestSchema = gql`
     description: String
     order: Int
     adTierId: ID
+    parent: ID
     availableSlots: Int!
     bookedSlots: Int!
     bookedBanner: Int
     bookedStamp: Int
     slotStatuses: [SlotStatus!]
     tierId: CategoryTier
+    # price entries specifically for 90‑day duration; helps frontend show default cost
+    pricing90: [AdCategoryPricing!]
   }
 
   type AdCategoryPricing {
@@ -153,20 +187,20 @@ export const CategoryRequestSchema = gql`
     slot: String!
     media_type: String
     mobile_image_url: String
-    mobile_redirect_url: String
     desktop_image_url: String
-    desktop_redirect_url: String
+    redirect_url: String
+    url_type: String
   }
 
   input CreateCategoryRequestInput {
     category_id: ID!
     duration_days: Int
+    start_preference: String
     medias: [CategoryRequestMediaInput!]!
   }
 
   input ApproveAdRequestInput {
     requestId: ID!
-    start_date: String!
   }
 
   input RejectAdRequestInput {
@@ -182,6 +216,7 @@ export const CategoryRequestSchema = gql`
     getCategoriesWithAvailableSlots: [CategoryWithSlots!]!
     getCategoryPricing(categoryId: ID!): CategoryPricingInfo
     getAdRequestsForApproval(status: String): [AdApprovalRequest!]!
+    checkSlotAvailability(requestId: ID!, start_date: String!): SlotAvailability!
     getApprovedAdsByCategory(categoryId: ID, categoryName: String): [ApprovedAd!]!
     getBannerAds: [ApprovedAd!]!
     getStampAds: [ApprovedAd!]!
