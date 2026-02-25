@@ -64,8 +64,7 @@ export const Query = {
                             media_type: m.media_type,
                             mobile_image_url: m.mobile_image_url,
                             desktop_image_url: m.desktop_image_url,
-                            mobile_redirect_url: m.mobile_redirect_url,
-                            desktop_redirect_url: m.desktop_redirect_url
+                            redirect_url: m.redirect_url || m.mobile_redirect_url || m.desktop_redirect_url
                         })),
                         durations: (durationsMap[reqId] || []).map(d => ({
                             id: d._id?.toString(),
@@ -149,8 +148,7 @@ export const Query = {
                             media_type: m.media_type,
                             mobile_image_url: m.mobile_image_url,
                             desktop_image_url: m.desktop_image_url,
-                            mobile_redirect_url: m.mobile_redirect_url,
-                            desktop_redirect_url: m.desktop_redirect_url
+                            redirect_url: m.redirect_url || m.mobile_redirect_url || m.desktop_redirect_url
                         })),
                         durations: (durationsMap[reqId] || []).map(d => ({
                             id: d._id?.toString(),
