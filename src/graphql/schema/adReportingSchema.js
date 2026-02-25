@@ -101,8 +101,7 @@ export const AdReportingSchema = gql`
     slot: String!
     mobileImageUrl: String
     desktopImageUrl: String
-    mobileRedirectUrl: String
-    desktopRedirectUrl: String
+    redirectUrl: String
   }
 
   type AdvertiserActiveAd {

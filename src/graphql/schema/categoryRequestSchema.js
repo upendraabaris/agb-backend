@@ -21,9 +21,9 @@ export const CategoryRequestSchema = gql`
     slot: String!
     media_type: String
     mobile_image_url: String
-    mobile_redirect_url: String
     desktop_image_url: String
-    desktop_redirect_url: String
+    redirect_url: String
+    url_type: String
     createdAt: String
     updatedAt: String
   }
@@ -46,6 +46,8 @@ export const CategoryRequestSchema = gql`
 
   type PricingBreakdown {
     quarter: String
+    start: String
+    end: String
     days: Int
     rate_per_day: Float
     subtotal: Float
@@ -57,8 +59,8 @@ export const CategoryRequestSchema = gql`
     media_type: String
     mobile_image_url: String
     desktop_image_url: String
-    mobile_redirect_url: String
-    desktop_redirect_url: String
+    redirect_url: String
+    url_type: String
   }
 
   type SellerAdDuration {
@@ -185,9 +187,9 @@ export const CategoryRequestSchema = gql`
     slot: String!
     media_type: String
     mobile_image_url: String
-    mobile_redirect_url: String
     desktop_image_url: String
-    desktop_redirect_url: String
+    redirect_url: String
+    url_type: String
   }
 
   input CreateCategoryRequestInput {
@@ -199,7 +201,6 @@ export const CategoryRequestSchema = gql`
 
   input ApproveAdRequestInput {
     requestId: ID!
-    start_date: String!
   }
 
   input RejectAdRequestInput {

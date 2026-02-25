@@ -14,6 +14,8 @@ const CategoryRequestDurationSchema = new mongoose.Schema({
   // pricing breakdown per quarter
   pricing_breakdown: [{
     quarter: { type: String },
+    start: { type: Date },
+    end: { type: Date },
     days: { type: Number },
     rate_per_day: { type: Number },
     subtotal: { type: Number }

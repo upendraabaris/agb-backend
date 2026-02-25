@@ -529,8 +529,7 @@ export const Query = {
                             slot: media.slot,
                             mobileImageUrl: media.mobile_image_url,
                             desktopImageUrl: media.desktop_image_url,
-                            mobileRedirectUrl: media.mobile_redirect_url,
-                            desktopRedirectUrl: media.desktop_redirect_url
+                            redirectUrl: media.redirect_url
                         } : null
                     });
                 }
