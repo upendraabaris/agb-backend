@@ -143,6 +143,7 @@ import { Query as CategoryRequestQuery } from "./resolvers/CategoryRequestResolv
 import { Mutation as CategoryRequestMutation } from "./resolvers/CategoryRequestResolver.js";
 
 import { Query as AdReportingQuery } from "./resolvers/AdReportingResolver.js";
+import { Query as ProductAdRequestQuery, Mutation as ProductAdRequestMutation } from "./resolvers/ProductAdRequestResolver.js";
 
 export const resolvers = {
   Upload: GraphQLUpload,
@@ -184,6 +185,7 @@ export const resolvers = {
     ...AdTierMasterQuery,
     ...CategoryRequestQuery,
     ...AdReportingQuery,
+    ...ProductAdRequestQuery,
   },
   Mutation: {
     ...UserMutation,
@@ -221,7 +223,8 @@ export const resolvers = {
     ...SuperSellerMutation,
     ...AdCategoryMutation,
     ...AdTierMasterMutation,
-    ...CategoryRequestMutation
+    ...CategoryRequestMutation,
+    ...ProductAdRequestMutation
   },
 
   Subscription: {
