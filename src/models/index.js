@@ -42,6 +42,8 @@ import CategoryRequestDuration from "./CategoryRequestDuration.js";
 import ProductAdRequest from "./ProductAdRequest.js";
 import ProductAdRequestMedia from "./ProductAdRequestMedia.js";
 import ProductAdRequestDuration from "./ProductAdRequestDuration.js";
+import SellerWallet from "./SellerWallet.js";
+import WalletTransaction from "./WalletTransaction.js";
 
 export default {
   User,
@@ -87,4 +89,6 @@ export default {
   ProductAdRequest,
   ProductAdRequestMedia,
   ProductAdRequestDuration,
+  SellerWallet,
+  WalletTransaction,
 };

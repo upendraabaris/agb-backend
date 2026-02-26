@@ -37,6 +37,7 @@ import { SuperSellerProductSchema } from "./schema/superSellerSchema.js";
 import { CategoryRequestSchema } from "./schema/categoryRequestSchema.js";
 import { AdReportingSchema } from "./schema/adReportingSchema.js";
 import { ProductAdRequestSchema } from "./schema/productAdRequestSchema.js";
+import { WalletSchema } from "./schema/walletSchema.js";
 
 export const RootSchema = gql`
   scalar Upload
@@ -88,5 +89,6 @@ export const typeDefs = [
   SuperSellerProductSchema,
   CategoryRequestSchema,
   AdReportingSchema,
-  ProductAdRequestSchema
+  ProductAdRequestSchema,
+  WalletSchema,
 ];

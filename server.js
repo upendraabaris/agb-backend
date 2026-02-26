@@ -10,6 +10,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { postReq } from "./src/controller/ccavRequestHandler.js";
 import { postRes } from "./src/controller/ccavResponseHandler.js";
+import { payuWalletResponse } from "./src/controller/payuWalletResponseHandler.js";
 import { typeDefs } from "./src/graphql/typeDefs.js";
 import { resolvers } from "./src/graphql/resolvers.js";
 import { createServer } from "http";
@@ -85,6 +86,14 @@ const Server = async () => {
 
   app.post("/api/ccavResponseHandler", function (request, response) {
     postRes(request, response);
+  });
+
+  // PayU wallet callback routes (success and failure use the same handler)
+  app.post("/api/payuWalletSuccess", function (request, response) {
+    payuWalletResponse(request, response);
+  });
+  app.post("/api/payuWalletFailure", function (request, response) {
+    payuWalletResponse(request, response);
   });
 
   app.use(
