@@ -144,6 +144,12 @@ import { Mutation as CategoryRequestMutation } from "./resolvers/CategoryRequest
 
 import { Query as AdReportingQuery } from "./resolvers/AdReportingResolver.js";
 
+import { Query as AdPricingConfigQuery } from "./resolvers/AdPricingConfigResolver.js";
+import { Mutation as AdPricingConfigMutation } from "./resolvers/AdPricingConfigResolver.js";
+
+import { Query as DefaultAdQuery } from "./resolvers/DefaultAdResolver.js";
+import { Mutation as DefaultAdMutation } from "./resolvers/DefaultAdResolver.js";
+
 export const resolvers = {
   Upload: GraphQLUpload,
   Query: {
@@ -184,6 +190,8 @@ export const resolvers = {
     ...AdTierMasterQuery,
     ...CategoryRequestQuery,
     ...AdReportingQuery,
+    ...AdPricingConfigQuery,
+    ...DefaultAdQuery,
   },
   Mutation: {
     ...UserMutation,
@@ -221,7 +229,9 @@ export const resolvers = {
     ...SuperSellerMutation,
     ...AdCategoryMutation,
     ...AdTierMasterMutation,
-    ...CategoryRequestMutation
+    ...CategoryRequestMutation,
+    ...AdPricingConfigMutation,
+    ...DefaultAdMutation,
   },
 
   Subscription: {

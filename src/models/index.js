@@ -39,6 +39,8 @@ import SuperSellerProduct from "./SuperSellerProduct.js";
 import CategoryRequest from "./CategoryRequest.js";
 import CategoryRequestMedia from "./CategoryRequestMedia.js";
 import CategoryRequestDuration from "./CategoryRequestDuration.js";
+import AdPricingConfig from "./AdPricingConfig.js";
+import DefaultAd from "./DefaultAd.js";
 
 export default {
   User,
@@ -81,4 +83,6 @@ export default {
   CategoryRequest,
   CategoryRequestMedia,
   CategoryRequestDuration,
+  AdPricingConfig,
+  DefaultAd,
 };
