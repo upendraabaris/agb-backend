@@ -38,6 +38,7 @@ import { CategoryRequestSchema } from "./schema/categoryRequestSchema.js";
 import { AdReportingSchema } from "./schema/adReportingSchema.js";
 import AdPricingConfigSchema from "./schema/adPricingConfigSchema.js";
 import DefaultAdSchema from "./schema/defaultAdSchema.js";
+import { WalletSchema } from "./schema/walletSchema.js";
 
 export const RootSchema = gql`
   scalar Upload
@@ -90,5 +91,6 @@ export const typeDefs = [
   CategoryRequestSchema,
   AdReportingSchema,
   AdPricingConfigSchema,
-  DefaultAdSchema
+  DefaultAdSchema,
+  WalletSchema
 ];

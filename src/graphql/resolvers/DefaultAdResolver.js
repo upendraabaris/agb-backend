@@ -3,6 +3,18 @@ import CategoryRequest from '../../models/CategoryRequest.js';
 import Category from '../../models/Category.js';
 import { processFileWithFolder } from '../../services/fileUploadService.js';
 
+// Build full URL from a relative uploads path (e.g. "uploads/default-ads/img.jpg")
+// Uses BASE_URL env (e.g. "http://localhost:4000/uploads/") to construct the absolute URL
+const getFullImageUrl = (relativePath) => {
+  if (!relativePath) return '';
+  if (relativePath.startsWith('http')) return relativePath; // already absolute
+  // BASE_URL ends with /uploads/ → strip trailing slash for clean join
+  const base = (process.env.BASE_URL || 'http://localhost:4000/uploads/').replace(/\/$/, '');
+  // relativePath is like "uploads/default-ads/file.jpg" → strip leading "uploads/"
+  const cleanPath = relativePath.replace(/^uploads\//, '');
+  return `${base}/${cleanPath}`;
+};
+
 // Helper to format response
 const formatDefaultAd = (ad) => {
   if (!ad) return null;
@@ -11,8 +23,8 @@ const formatDefaultAd = (ad) => {
     ad_type: ad.ad_type,
     slot_position: ad.slot_position,
     slot_name: `${ad.ad_type}_${ad.slot_position}`,
-    mobile_image_url: ad.mobile_image_url,
-    desktop_image_url: ad.desktop_image_url,
+    mobile_image_url: getFullImageUrl(ad.mobile_image_url),
+    desktop_image_url: getFullImageUrl(ad.desktop_image_url),
     redirect_url: ad.redirect_url,
     title: ad.title || '',
     description: ad.description || '',

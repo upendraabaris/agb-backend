@@ -150,6 +150,9 @@ import { Mutation as AdPricingConfigMutation } from "./resolvers/AdPricingConfig
 import { Query as DefaultAdQuery } from "./resolvers/DefaultAdResolver.js";
 import { Mutation as DefaultAdMutation } from "./resolvers/DefaultAdResolver.js";
 
+import { Query as WalletQuery } from "./resolvers/WalletResolver.js";
+import { Mutation as WalletMutation } from "./resolvers/WalletResolver.js";
+
 export const resolvers = {
   Upload: GraphQLUpload,
   Query: {
@@ -192,6 +195,7 @@ export const resolvers = {
     ...AdReportingQuery,
     ...AdPricingConfigQuery,
     ...DefaultAdQuery,
+    ...WalletQuery,
   },
   Mutation: {
     ...UserMutation,
@@ -232,6 +236,7 @@ export const resolvers = {
     ...CategoryRequestMutation,
     ...AdPricingConfigMutation,
     ...DefaultAdMutation,
+    ...WalletMutation,
   },
 
   Subscription: {
