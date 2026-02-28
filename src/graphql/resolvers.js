@@ -143,6 +143,7 @@ import { Query as CategoryRequestQuery } from "./resolvers/CategoryRequestResolv
 import { Mutation as CategoryRequestMutation } from "./resolvers/CategoryRequestResolver.js";
 
 import { Query as AdReportingQuery } from "./resolvers/AdReportingResolver.js";
+import { Query as ProductAdRequestQuery, Mutation as ProductAdRequestMutation } from "./resolvers/ProductAdRequestResolver.js";
 
 import { Query as AdPricingConfigQuery } from "./resolvers/AdPricingConfigResolver.js";
 import { Mutation as AdPricingConfigMutation } from "./resolvers/AdPricingConfigResolver.js";
