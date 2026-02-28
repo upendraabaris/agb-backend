@@ -3,6 +3,15 @@ import jwt from 'jsonwebtoken';
 import authenticate from '../../middlewares/auth.js';
 import AdPricingConfig from '../../models/AdPricingConfig.js';
 
+// Build full image URL from relative path (e.g. "uploads/img.jpg" → "http://localhost:4000/uploads/img.jpg")
+const getFullImageUrl = (relativePath) => {
+  if (!relativePath) return '';
+  if (relativePath.startsWith('http') || relativePath.startsWith('data:')) return relativePath;
+  const base = (process.env.BASE_URL || 'http://localhost:4000/uploads/').replace(/\/$/, '');
+  const cleanPath = relativePath.replace(/^uploads\//, '');
+  return `${base}/${cleanPath}`;
+};
+
 // ─── HELPER: Get next 4 quarters starting from current quarter ──────────────
 const getNext4Quarters = () => {
   const now = new Date();
@@ -133,8 +142,8 @@ export const Query = {
               id: m._id?.toString(),
               slot: m.slot,
               media_type: m.media_type,
-              mobile_image_url: m.mobile_image_url,
-              desktop_image_url: m.desktop_image_url,
+              mobile_image_url: getFullImageUrl(m.mobile_image_url),
+              desktop_image_url: getFullImageUrl(m.desktop_image_url),
               redirect_url: m.redirect_url,
               url_type: m.url_type
             })),
@@ -655,8 +664,8 @@ export const Query = {
               id: m._id?.toString(),
               slot: m.slot,
               media_type: m.media_type,
-              mobile_image_url: m.mobile_image_url,
-              desktop_image_url: m.desktop_image_url,
+              mobile_image_url: getFullImageUrl(m.mobile_image_url),
+              desktop_image_url: getFullImageUrl(m.desktop_image_url),
               redirect_url: m.redirect_url,
               url_type: m.url_type
             })),
@@ -759,8 +768,8 @@ export const Query = {
               id: m._id?.toString(),
               slot: m.slot,
               media_type: m.media_type,
-              mobile_image_url: m.mobile_image_url,
-              desktop_image_url: m.desktop_image_url,
+              mobile_image_url: getFullImageUrl(m.mobile_image_url),
+              desktop_image_url: getFullImageUrl(m.desktop_image_url),
               redirect_url: m.redirect_url,
               url_type: m.url_type
             })),
@@ -874,8 +883,8 @@ export const Query = {
               id: m._id?.toString(),
               slot: m.slot,
               media_type: m.media_type,
-              mobile_image_url: m.mobile_image_url,
-              desktop_image_url: m.desktop_image_url,
+              mobile_image_url: getFullImageUrl(m.mobile_image_url),
+              desktop_image_url: getFullImageUrl(m.desktop_image_url),
               redirect_url: m.redirect_url,
               url_type: m.url_type
             })),
@@ -977,8 +986,8 @@ export const Query = {
               id: m._id?.toString(),
               slot: m.slot,
               media_type: m.media_type,
-              mobile_image_url: m.mobile_image_url,
-              desktop_image_url: m.desktop_image_url,
+              mobile_image_url: getFullImageUrl(m.mobile_image_url),
+              desktop_image_url: getFullImageUrl(m.desktop_image_url),
               redirect_url: m.redirect_url,
               url_type: m.url_type
             })),

@@ -3,14 +3,14 @@ import CategoryRequest from '../../models/CategoryRequest.js';
 import Category from '../../models/Category.js';
 import { processFileWithFolder } from '../../services/fileUploadService.js';
 
-// Build full URL from a relative uploads path (e.g. "uploads/default-ads/img.jpg")
+// Build full URL from a relative uploads path (e.g. "uploads/img.jpg")
 // Uses BASE_URL env (e.g. "http://localhost:4000/uploads/") to construct the absolute URL
 const getFullImageUrl = (relativePath) => {
   if (!relativePath) return '';
   if (relativePath.startsWith('http')) return relativePath; // already absolute
   // BASE_URL ends with /uploads/ → strip trailing slash for clean join
   const base = (process.env.BASE_URL || 'http://localhost:4000/uploads/').replace(/\/$/, '');
-  // relativePath is like "uploads/default-ads/file.jpg" → strip leading "uploads/"
+  // relativePath is like "uploads/file.jpg" → strip leading "uploads/"
   const cleanPath = relativePath.replace(/^uploads\//, '');
   return `${base}/${cleanPath}`;
 };
@@ -280,10 +280,10 @@ export const Mutation = {
     }
   },
 
-  // Generic file upload with folder support
+  // Generic file upload (all images go to /uploads/ directly)
   uploadFile: async (_, { file, folder }) => {
     try {
-      const result = await processFileWithFolder(file, folder || 'default-ads');
+      const result = await processFileWithFolder(file, folder || '');
       return {
         success: true,
         url: result.filePath,
