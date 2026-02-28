@@ -139,6 +139,21 @@ export const CategoryRequestSchema = gql`
     freeDate: String     # if the slot is currently booked this is when it becomes free (ISO)
   }
 
+  # Per-slot availability within a specific quarter
+  type QuarterSlotStatus {
+    slot: String!
+    available: Boolean!
+  }
+
+  # Quarter-level availability for a category
+  type QuarterAvailability {
+    quarter: String!       # "Q2 2026"
+    label: String!         # "Apr - Jun 2026"
+    startDate: String!
+    endDate: String!
+    slots: [QuarterSlotStatus!]!
+  }
+
   type CategoryWithSlots {
     id: ID!
     name: String!
@@ -153,13 +168,17 @@ export const CategoryRequestSchema = gql`
     bookedStamp: Int
     slotStatuses: [SlotStatus!]
     tierId: CategoryTier
-    # price entries specifically for 90‑day duration; helps frontend show default cost
+    # price entries specifically for quarterly duration; helps frontend show default cost
     pricing90: [AdCategoryPricing!]
+    # Next 4 quarters with per-slot availability
+    quarterAvailability: [QuarterAvailability!]
   }
 
   type AdCategoryPricing {
     id: ID!
     ad_type: String!
+    slot_name: String!
+    slot_position: Int!
     price: Int!
     priority: Int
     duration_days: Int!
@@ -195,7 +214,9 @@ export const CategoryRequestSchema = gql`
   input CreateCategoryRequestInput {
     category_id: ID!
     duration_days: Int
-    start_preference: String
+    duration_type: String          # "quarterly" | "half_yearly" | "yearly"
+    start_preference: String       # "today" | "select_quarter"
+    start_quarter: String          # ISO date of quarter start, e.g. "2026-04-01"
     medias: [CategoryRequestMediaInput!]!
   }
 

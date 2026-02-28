@@ -36,7 +36,9 @@ import { StateSchema } from "./schema/stateSchema.js";
 import { SuperSellerProductSchema } from "./schema/superSellerSchema.js";
 import { CategoryRequestSchema } from "./schema/categoryRequestSchema.js";
 import { AdReportingSchema } from "./schema/adReportingSchema.js";
-import { ProductAdRequestSchema } from "./schema/productAdRequestSchema.js";
+import AdPricingConfigSchema from "./schema/adPricingConfigSchema.js";
+import DefaultAdSchema from "./schema/defaultAdSchema.js";
+import { WalletSchema } from "./schema/walletSchema.js";
 
 export const RootSchema = gql`
   scalar Upload
@@ -88,5 +90,7 @@ export const typeDefs = [
   SuperSellerProductSchema,
   CategoryRequestSchema,
   AdReportingSchema,
-  ProductAdRequestSchema
+  AdPricingConfigSchema,
+  DefaultAdSchema,
+  WalletSchema
 ];

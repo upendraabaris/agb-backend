@@ -145,6 +145,15 @@ import { Mutation as CategoryRequestMutation } from "./resolvers/CategoryRequest
 import { Query as AdReportingQuery } from "./resolvers/AdReportingResolver.js";
 import { Query as ProductAdRequestQuery, Mutation as ProductAdRequestMutation } from "./resolvers/ProductAdRequestResolver.js";
 
+import { Query as AdPricingConfigQuery } from "./resolvers/AdPricingConfigResolver.js";
+import { Mutation as AdPricingConfigMutation } from "./resolvers/AdPricingConfigResolver.js";
+
+import { Query as DefaultAdQuery } from "./resolvers/DefaultAdResolver.js";
+import { Mutation as DefaultAdMutation } from "./resolvers/DefaultAdResolver.js";
+
+import { Query as WalletQuery } from "./resolvers/WalletResolver.js";
+import { Mutation as WalletMutation } from "./resolvers/WalletResolver.js";
+
 export const resolvers = {
   Upload: GraphQLUpload,
   Query: {
@@ -185,7 +194,9 @@ export const resolvers = {
     ...AdTierMasterQuery,
     ...CategoryRequestQuery,
     ...AdReportingQuery,
-    ...ProductAdRequestQuery,
+    ...AdPricingConfigQuery,
+    ...DefaultAdQuery,
+    ...WalletQuery,
   },
   Mutation: {
     ...UserMutation,
@@ -224,7 +235,9 @@ export const resolvers = {
     ...AdCategoryMutation,
     ...AdTierMasterMutation,
     ...CategoryRequestMutation,
-    ...ProductAdRequestMutation
+    ...AdPricingConfigMutation,
+    ...DefaultAdMutation,
+    ...WalletMutation,
   },
 
   Subscription: {
