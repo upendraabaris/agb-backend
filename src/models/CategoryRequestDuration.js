@@ -6,7 +6,7 @@ const CategoryRequestDurationSchema = new mongoose.Schema({
   duration_days: { type: Number, default: 30 },
   start_date: { type: Date },
   end_date: { type: Date },
-  status: { type: String, enum: ['pending', 'running', 'completed'], default: 'pending' },
+  status: { type: String, enum: ['pending', 'approved', 'running', 'completed', 'rejected'], default: 'pending' },
   // start preference indicates whether the ad should start immediately or from next quarter
   start_preference: { type: String, enum: ['today', 'next_quarter'], default: 'today' },
   // which quarters (Q1..Q4) this duration spans
