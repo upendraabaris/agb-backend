@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import authenticate from '../../middlewares/auth.js';
 import AdPricingConfig from '../../models/AdPricingConfig.js';
+import SellerWallet from '../../models/SellerWallet.js';
+import WalletTransaction from '../../models/WalletTransaction.js';
 
 // Build full image URL from relative path (e.g. "uploads/img.jpg" → "http://localhost:4000/uploads/img.jpg")
 const getFullImageUrl = (relativePath) => {
@@ -1316,9 +1318,46 @@ export const Mutation = {
       console.log('[approveAdRequest] Admin:', adminId, 'Request:', requestId);
 
       // Find the request
-      const categoryRequest = await models.CategoryRequest.findById(requestId);
+      const categoryRequest = await models.CategoryRequest.findById(requestId).populate('category_id');
       if (!categoryRequest) throw new Error('Ad request not found');
       if (categoryRequest.status !== 'pending') throw new Error('Request is not in pending status');
+
+      // ── Calculate total ad cost from all slot durations ──
+      const durations = await models.CategoryRequestDuration.find({ category_request_id: requestId }).lean();
+      const totalCost = durations.reduce((sum, d) => sum + (d.total_price || 0), 0);
+      console.log('[approveAdRequest] Total ad cost:', totalCost);
+
+      // ── Check seller wallet balance ──
+      const sellerId = categoryRequest.seller_id;
+      let wallet = await SellerWallet.findOne({ seller_id: sellerId }).session(session);
+      if (!wallet) {
+        wallet = (await SellerWallet.create([{ seller_id: sellerId, balance: 0 }], { session }))[0];
+      }
+
+      if (wallet.balance < totalCost) {
+        throw new Error(
+          `Insufficient wallet balance. Seller has ₹${wallet.balance} but ₹${totalCost} is required.`
+        );
+      }
+
+      // ── Deduct from wallet ──
+      wallet.balance -= totalCost;
+      await wallet.save({ session });
+      console.log('[approveAdRequest] Wallet deducted. New balance:', wallet.balance);
+
+      // ── Create debit transaction record ──
+      const categoryName = categoryRequest.category_id?.name || 'Unknown';
+      const slotNames = durations.map(d => d.slot).join(', ');
+      await WalletTransaction.create([{
+        seller_id: sellerId,
+        type: 'debit',
+        amount: totalCost,
+        source: 'ad_deduction',
+        description: `Ad approved for ${categoryName} (${slotNames})`,
+        status: 'success',
+      }], { session });
+
+      console.log('[approveAdRequest] Wallet transaction created');
 
       // Update all durations status to 'approved'
       await models.CategoryRequestDuration.updateMany(
@@ -1329,14 +1368,15 @@ export const Mutation = {
 
       console.log('[approveAdRequest] Durations updated to approved status');
 
-      // Update category request status
+      // Update category request status + store total_cost
       const updatedRequest = await models.CategoryRequest.findByIdAndUpdate(
         requestId,
         {
           $set: {
             status: 'approved',
             approved_by: adminId,
-            approved_date: new Date()
+            approved_date: new Date(),
+            total_cost: totalCost
           }
         },
         { new: true, session }
@@ -1345,11 +1385,11 @@ export const Mutation = {
       await session.commitTransaction();
       session.endSession();
 
-      console.log('[approveAdRequest] Approved successfully');
+      console.log('[approveAdRequest] Approved successfully. Deducted ₹' + totalCost);
 
       return {
         success: true,
-        message: 'Ad request approved successfully',
+        message: `Ad request approved. ₹${totalCost} deducted from seller wallet.`,
         data: updatedRequest
       };
     } catch (err) {
