@@ -8,7 +8,8 @@ const CategoryRequestSchema = new mongoose.Schema({
   status: { type: String, enum: ['pending', 'approved', 'rejected', 'running'], default: 'pending' },
   approved_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   approved_date: { type: Date },
-  rejection_reason: { type: String }
+  rejection_reason: { type: String },
+  total_cost: { type: Number }
 }, { timestamps: true });
 
 const CategoryRequest = mongoose.model('CategoryRequest', CategoryRequestSchema);
