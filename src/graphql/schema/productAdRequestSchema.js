@@ -105,10 +105,41 @@ export const ProductAdRequestSchema = gql`
     data: ProductAdRequest
   }
 
+  # Pricing result for a product's tier
+  type ProductPricingResult {
+    tierId: ID!
+    tierName: String!
+    adCategories: [ProductAdPricingEntry!]!
+  }
+
+  type ProductAdPricingEntry {
+    id: ID!
+    ad_type: String!
+    slot_name: String!
+    slot_position: Int!
+    price: Float!
+    priority: Int!
+    duration_days: Int!
+  }
+
+  type ProductAdTierResponse {
+    success: Boolean!
+    message: String
+  }
+
+  input ProductAdRequestMediaInput {
+    slot: String!
+    media_type: String
+    mobile_image_url: String
+    desktop_image_url: String
+    mobile_redirect_url: String
+    desktop_redirect_url: String
+  }
+
   input CreateProductAdRequestInput {
     product_id: ID!
     duration_days: Int
-    medias: [CategoryRequestMediaInput!]!
+    medias: [ProductAdRequestMediaInput!]!
   }
 
   input ApproveProductAdRequestInput {
@@ -128,6 +159,9 @@ export const ProductAdRequestSchema = gql`
     # Admin queries (JWT-authenticated)
     getProductAdRequestsForApproval(status: String): [ProductAdApprovalRequest!]!
 
+    # Pricing query — returns tier pricing for a product
+    getProductAdPricing(productId: ID!): ProductPricingResult
+
     # Public/display queries
     getProductsWithAvailableAdSlots: [ProductWithAdSlots!]!
     getApprovedAdsByProduct(productId: ID, productName: String): [ApprovedProductAd!]!
@@ -139,5 +173,7 @@ export const ProductAdRequestSchema = gql`
     createProductAdRequest(input: CreateProductAdRequestInput!): ProductAdRequest
     approveProductAdRequest(input: ApproveProductAdRequestInput!): ProductApprovalResponse!
     rejectProductAdRequest(input: RejectProductAdRequestInput!): ProductApprovalResponse!
+    # Admin: assign ad tier to a product
+    setProductAdTier(productId: ID!, tierId: ID!): ProductAdTierResponse!
   }
 `;

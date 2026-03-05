@@ -8,7 +8,7 @@ const LocationSchema = new mongoose.Schema({
     type: [Number],
   },
   state: {
-    type: [String], 
+    type: [String],
   },
   b2cdiscount: {
     type: Number,
@@ -147,6 +147,10 @@ const ProductSchema = new mongoose.Schema(
     },
     fixedComm: {
       type: Number,
+    },
+    adTierId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AdTierMaster',
     },
     images: {
       type: [String],

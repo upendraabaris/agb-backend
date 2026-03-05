@@ -1,6 +1,9 @@
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import authenticate from '../../middlewares/auth.js';
+import AdPricingConfig from '../../models/AdPricingConfig.js';
+import SellerWallet from '../../models/SellerWallet.js';
+import WalletTransaction from '../../models/WalletTransaction.js';
 
 export const Query = {
     // ─── SELLER ────────────────────────────────────────────────────────────────
@@ -169,6 +172,40 @@ export const Query = {
         }
     }),
 
+    // ─── PRICING ───────────────────────────────────────────────────────────────
+    // Get pricing for a product based on its own adTierId
+    getProductAdPricing: async (_, { productId }, { models }) => {
+        try {
+            const product = await models.Product.findById(productId).populate('adTierId').lean();
+            if (!product) throw new Error('Product not found');
+            if (!product.adTierId) return null; // Admin hasn't assigned a tier yet
+
+            const tierId = product.adTierId._id;
+            const tierName = product.adTierId.name || 'Unknown Tier';
+
+            const pricingConfig = await AdPricingConfig.findOne({ tier_id: tierId, is_active: true }).lean();
+            if (!pricingConfig || !pricingConfig.generated_prices) {
+                return { tierId: tierId.toString(), tierName, adCategories: [] };
+            }
+
+            const configId = pricingConfig._id?.toString();
+            const adCategories = [];
+            pricingConfig.generated_prices.forEach(gp => {
+                const priority = gp.ad_type === 'banner' ? gp.slot_position : gp.slot_position + 4;
+                adCategories.push(
+                    { id: `${configId}_${gp.slot_name}_q`, ad_type: gp.ad_type, slot_name: gp.slot_name, slot_position: gp.slot_position, price: gp.quarterly, priority, duration_days: 90 },
+                    { id: `${configId}_${gp.slot_name}_h`, ad_type: gp.ad_type, slot_name: gp.slot_name, slot_position: gp.slot_position, price: gp.half_yearly, priority, duration_days: 180 },
+                    { id: `${configId}_${gp.slot_name}_y`, ad_type: gp.ad_type, slot_name: gp.slot_name, slot_position: gp.slot_position, price: gp.yearly, priority, duration_days: 365 }
+                );
+            });
+
+            return { tierId: tierId.toString(), tierName, adCategories };
+        } catch (err) {
+            console.error('[getProductAdPricing] error:', err);
+            throw new Error('Failed to fetch product ad pricing: ' + err.message);
+        }
+    },
+
     // ─── PUBLIC ────────────────────────────────────────────────────────────────
     // List all products with slot availability (for seller to pick a product to advertise)
     getProductsWithAvailableAdSlots: async (_, __, { models }) => {
@@ -285,24 +322,16 @@ export const Query = {
                 durationsMap[key].push(d);
             });
 
-            const now = new Date();
             return approvedRequests
                 .map(r => {
                     const reqId = r._id.toString();
-                    const durations = durationsMap[reqId] || [];
-                    const isRunning = durations.some(d => {
-                        if (d.status !== 'approved') return false;
-                        const start = d.start_date ? new Date(d.start_date) : null;
-                        const end = d.end_date ? new Date(d.end_date) : null;
-                        if (start && end) return now >= start && now <= end;
-                        return true; // fallback: no dates set but approved
-                    });
-                    if (!isRunning) return null;
-
                     const product = r.product_id;
                     const sellerName = r.seller_id
                         ? `${r.seller_id.first_name || ''} ${r.seller_id.last_name || ''}`.trim()
                         : 'Unknown Seller';
+
+                    const medias = mediasMap[reqId] || [];
+                    if (!medias.length) return null;
 
                     return {
                         id: reqId,
@@ -311,7 +340,7 @@ export const Query = {
                         productId: product?._id?.toString(),
                         productName: product?.fullName || product?.previewName || 'Unknown',
                         brandName: product?.brand_name || null,
-                        medias: (mediasMap[reqId] || []).map(m => ({
+                        medias: medias.map(m => ({
                             id: m._id?.toString(),
                             slot: m.slot,
                             media_type: m.media_type,
@@ -455,31 +484,21 @@ export const Mutation = {
                 console.log('[createProductAdRequest] Input:', JSON.stringify(input, null, 2));
                 console.log('[createProductAdRequest] Seller ID:', sellerId);
 
-                // Verify product exists
+                // Verify product exists and has an ad tier assigned directly
                 const product = await models.Product.findById(input.product_id)
-                    .populate('categories')
+                    .populate('adTierId')
                     .lean();
                 if (!product) throw new Error('Product not found');
-
-                // Auto-inherit tier from the product's first parent category
-                let tierId = null;
-                if (product.categories && product.categories.length > 0) {
-                    // categories may be ObjectIds or populated objects
-                    let category = null;
-                    for (const cat of product.categories) {
-                        const catId = cat._id || cat;
-                        const catDoc = await models.Category.findById(catId).populate('adTierId').lean();
-                        if (catDoc && catDoc.adTierId) {
-                            category = catDoc;
-                            break;
-                        }
-                    }
-                    if (category) {
-                        tierId = category.adTierId._id;
-                    }
+                if (!product.adTierId) {
+                    throw new Error('No ad tier assigned to this product. Admin must assign a tier first.');
                 }
-                if (!tierId) {
-                    throw new Error("No ad tier found for this product's category. Please contact admin to configure a tier for the product's category.");
+
+                const tierId = product.adTierId._id;
+
+                // Load pricing config for this tier
+                const pricingConfig = await AdPricingConfig.findOne({ tier_id: tierId, is_active: true }).lean();
+                if (!pricingConfig || !pricingConfig.generated_prices) {
+                    throw new Error('No pricing config found for this product tier. Please contact admin.');
                 }
 
                 console.log('[createProductAdRequest] Resolved tier:', tierId);
@@ -528,15 +547,29 @@ export const Mutation = {
                 }));
                 await models.ProductAdRequestMedia.insertMany(medias, { session });
 
-                // Create duration entries
-                const durations = input.medias.map(m => ({
-                    product_ad_request_id: requestDoc[0]._id,
-                    slot: m.slot,
-                    duration_days: input.duration_days || 30,
-                    status: 'pending',
-                    start_date: null,
-                    end_date: null
-                }));
+                // ─── Duration / pricing calculation (mirrors CategoryRequestResolver) ───
+                const DURATION_MAP_PROD = {
+                    30: { configKey: 'quarterly' },
+                    90: { configKey: 'quarterly' },
+                    180: { configKey: 'half_yearly' },
+                    365: { configKey: 'yearly' },
+                    360: { configKey: 'yearly' },
+                };
+                const configKey = DURATION_MAP_PROD[input.duration_days]?.configKey || 'quarterly';
+
+                const durations = input.medias.map(m => {
+                    const slotPriceEntry = pricingConfig.generated_prices.find(p => p.slot_name === m.slot);
+                    const totalPrice = slotPriceEntry ? (slotPriceEntry[configKey] || 0) : 0;
+                    return {
+                        product_ad_request_id: requestDoc[0]._id,
+                        slot: m.slot,
+                        duration_days: input.duration_days || 90,
+                        status: 'pending',
+                        start_date: null,
+                        end_date: null,
+                        total_price: totalPrice,
+                    };
+                });
                 await models.ProductAdRequestDuration.insertMany(durations, { session });
 
                 await session.commitTransaction();
@@ -556,19 +589,24 @@ export const Mutation = {
     // Admin approves a product ad request
     approveProductAdRequest: authenticate(['admin'])(
         async (_, { input }, { models, req }) => {
+            const session = await mongoose.startSession();
+            session.startTransaction();
             try {
                 const { requestId, start_date } = input;
 
-                const adRequest = await models.ProductAdRequest.findById(requestId);
+                const adRequest = await models.ProductAdRequest.findById(requestId)
+                    .populate('product_id', 'fullName previewName')
+                    .session(session);
                 if (!adRequest) throw new Error('Product ad request not found');
                 if (adRequest.status === 'rejected') throw new Error('Cannot approve a rejected request');
+                if (adRequest.status === 'approved') throw new Error('Request already approved');
 
                 // Calculate end_date from the first duration entry's duration_days
                 const firstDuration = await models.ProductAdRequestDuration.findOne({
                     product_ad_request_id: requestId
                 }).lean();
 
-                const durationDays = firstDuration?.duration_days || 30;
+                const durationDays = firstDuration?.duration_days || 90;
                 const startDateObj = new Date(start_date);
                 const endDateObj = new Date(startDateObj);
                 endDateObj.setDate(endDateObj.getDate() + durationDays);
@@ -582,23 +620,29 @@ export const Mutation = {
                             start_date: startDateObj,
                             end_date: endDateObj
                         }
-                    }
+                    },
+                    { session }
                 );
 
                 // Update the request status
                 adRequest.status = 'approved';
                 adRequest.approved_date = new Date();
-                await adRequest.save();
+                await adRequest.save({ session });
+
+                await session.commitTransaction();
+                session.endSession();
 
                 console.log('[approveProductAdRequest] Approved request:', requestId);
 
                 return {
                     success: true,
-                    message: 'Product ad request approved successfully',
+                    message: `Product ad approved successfully.`,
                     data: adRequest
                 };
             } catch (err) {
                 console.error('[approveProductAdRequest] error:', err);
+                await session.abortTransaction();
+                session.endSession();
                 return { success: false, message: err.message, data: null };
             }
         }
@@ -627,6 +671,28 @@ export const Mutation = {
             } catch (err) {
                 console.error('[rejectProductAdRequest] error:', err);
                 return { success: false, message: err.message, data: null };
+            }
+        }
+    ),
+
+    // Admin assigns an ad tier directly to a product
+    setProductAdTier: authenticate(['admin'])(
+        async (_, { productId, tierId }, { models }) => {
+            try {
+                const product = await models.Product.findById(productId);
+                if (!product) throw new Error('Product not found');
+
+                const tier = await models.AdTierMaster.findById(tierId);
+                if (!tier) throw new Error('Tier not found');
+
+                product.adTierId = tierId;
+                await product.save();
+
+                console.log('[setProductAdTier] Set tier', tierId, 'for product', productId);
+                return { success: true, message: `Tier "${tier.name}" assigned to product successfully` };
+            } catch (err) {
+                console.error('[setProductAdTier] error:', err);
+                return { success: false, message: err.message };
             }
         }
     )

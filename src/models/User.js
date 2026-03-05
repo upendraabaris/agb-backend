@@ -52,6 +52,7 @@ const UserSchema = new Schema(
         "inventoryManager",
         "orderManager",
         "productPriceUpdateManager",
+        "adManager",
       ],
     },
     addresses: [

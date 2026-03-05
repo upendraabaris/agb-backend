@@ -379,6 +379,7 @@ export const Query = {
         ...query,
       })
         .populate("variant.location.sellerId")
+        .populate("adTierId")
         .collation(collationOptions)
         .sort(sortOptions)
         .limit(limit)
