@@ -11,6 +11,21 @@ const ProductAdRequestDurationSchema = new mongoose.Schema({
     start_date: { type: Date },
     end_date: { type: Date },
     status: { type: String, enum: ['pending', 'approved', 'running', 'completed', 'rejected'], default: 'pending' },
+    // start preference indicates whether the ad should start immediately or from next quarter
+    start_preference: { type: String, enum: ['today', 'next_quarter', 'select_quarter'], default: 'today' },
+    // selected quarter (e.g. "Q2 2026") when start_preference === 'select_quarter'
+    selected_quarter: { type: String },
+    // which quarters (Q1..Q4) this duration spans
+    quarters_covered: [{ type: String }],
+    // pricing breakdown per quarter
+    pricing_breakdown: [{
+        quarter: { type: String },
+        start: { type: Date },
+        end: { type: Date },
+        days: { type: Number },
+        rate_per_day: { type: Number },
+        subtotal: { type: Number }
+    }],
     total_price: { type: Number, default: 0 }
 }, { timestamps: true });
 

@@ -36,9 +36,38 @@ export const ProductAdRequestSchema = gql`
     start_date: String
     end_date: String
     status: String
+    start_preference: String
+    selected_quarter: String
+    quarters_covered: [String]
+    pricing_breakdown: [ProductAdPricingBreakdown]
+    total_price: Float
     createdAt: String
     updatedAt: String
   }
+
+  type ProductAdPricingBreakdown {
+    quarter: String
+    start: String
+    end: String
+    days: Int
+    rate_per_day: Float
+    subtotal: Float
+  }
+
+  # Upcoming quarter info (for quarter selection UI)
+  type ProductAdQuarterInfo {
+    quarter: String!
+    label: String!
+    startDate: String!
+    endDate: String!
+    slots: [ProductAdQuarterSlotStatus!]!
+  }
+
+  type ProductAdQuarterSlotStatus {
+    slot: String!
+    available: Boolean!
+  }
+    
 
   # For seller's "My Product Ads" dashboard
   type SellerProductAdInfo {
@@ -92,11 +121,13 @@ export const ProductAdRequestSchema = gql`
     productName: String!
     brandName: String
     thumbnail: String
+    tierName: String
     availableSlots: Int!
     bookedSlots: Int!
     bookedBanner: Int!
     bookedStamp: Int!
     slotStatuses: [SlotStatus!]!
+    quarterAvailability: [ProductAdQuarterInfo!]!
   }
 
   type ProductApprovalResponse {
@@ -139,6 +170,8 @@ export const ProductAdRequestSchema = gql`
   input CreateProductAdRequestInput {
     product_id: ID!
     duration_days: Int
+    start_preference: String
+    selected_quarter: String
     medias: [ProductAdRequestMediaInput!]!
   }
 
@@ -167,6 +200,9 @@ export const ProductAdRequestSchema = gql`
     getApprovedAdsByProduct(productId: ID, productName: String): [ApprovedProductAd!]!
     getProductBannerAds: [ApprovedProductAd!]!
     getProductStampAds: [ApprovedProductAd!]!
+
+    # Quarter selection — returns current + next 3 quarters with per-product slot availability
+    getUpcomingQuartersForProduct(productId: ID): [ProductAdQuarterInfo!]!
   }
 
   extend type Mutation {

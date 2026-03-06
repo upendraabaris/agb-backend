@@ -5,6 +5,115 @@ import AdPricingConfig from '../../models/AdPricingConfig.js';
 import SellerWallet from '../../models/SellerWallet.js';
 import WalletTransaction from '../../models/WalletTransaction.js';
 
+// ─── HELPER: Get next 4 quarters starting from current quarter ──────────────
+const getNext4Quarters = () => {
+    const now = new Date();
+    const currentMonth = now.getUTCMonth(); // 0-based
+    const currentYear = now.getUTCFullYear();
+
+    let qStartMonth;
+    if (currentMonth <= 2) qStartMonth = 0;       // Q1: Jan
+    else if (currentMonth <= 5) qStartMonth = 3;   // Q2: Apr
+    else if (currentMonth <= 8) qStartMonth = 6;   // Q3: Jul
+    else qStartMonth = 9;                           // Q4: Oct
+
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const quarters = [];
+    let month = qStartMonth;
+    let year = currentYear;
+
+    for (let i = 0; i < 4; i++) {
+        const qNum = Math.floor(month / 3) + 1;
+        const startDate = new Date(Date.UTC(year, month, 1));
+        let endDate;
+        if (month === 0) endDate = new Date(Date.UTC(year, 2, 31, 23, 59, 59, 999));
+        else if (month === 3) endDate = new Date(Date.UTC(year, 5, 30, 23, 59, 59, 999));
+        else if (month === 6) endDate = new Date(Date.UTC(year, 8, 30, 23, 59, 59, 999));
+        else endDate = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
+
+        const label = `${monthNames[month]} - ${monthNames[month + 2]} ${year}`;
+        quarters.push({ quarter: `Q${qNum} ${year}`, label, startDate, endDate });
+
+        month += 3;
+        if (month >= 12) { month = 0; year++; }
+    }
+    return quarters;
+};
+
+// ─── HELPER: Quarter computation utilities ───────────────────────────────────
+const getQuarterLabel = (date) => {
+    const m = date.getUTCMonth() + 1;
+    const year = date.getUTCFullYear();
+    if (m >= 1 && m <= 3) return `Q1 ${year}`;
+    if (m >= 4 && m <= 6) return `Q2 ${year}`;
+    if (m >= 7 && m <= 9) return `Q3 ${year}`;
+    return `Q4 ${year}`;
+};
+
+const getQuarterEnd = (date) => {
+    const m = date.getUTCMonth() + 1;
+    const year = date.getUTCFullYear();
+    if (m >= 1 && m <= 3) return new Date(Date.UTC(year, 2, 31, 23, 59, 59, 999));
+    if (m >= 4 && m <= 6) return new Date(Date.UTC(year, 5, 30, 23, 59, 59, 999));
+    if (m >= 7 && m <= 9) return new Date(Date.UTC(year, 8, 30, 23, 59, 59, 999));
+    return new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
+};
+
+const getNextQuarterStart = (date) => {
+    const m = date.getUTCMonth();
+    const year = date.getUTCFullYear();
+    if (m <= 2) return new Date(Date.UTC(year, 3, 1));
+    if (m <= 5) return new Date(Date.UTC(year, 6, 1));
+    if (m <= 8) return new Date(Date.UTC(year, 9, 1));
+    return new Date(Date.UTC(year + 1, 0, 1));
+};
+
+const addDays = (date, days) => {
+    const d = new Date(date);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d;
+};
+
+const splitIntervalByQuarter = (start, days) => {
+    const segments = [];
+    let current = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()));
+    let remaining = days;
+    const msPerDay = 24 * 60 * 60 * 1000;
+    while (remaining > 0) {
+        const quarterEnd = getQuarterEnd(current);
+        const diff = Math.floor(
+            (Date.UTC(quarterEnd.getUTCFullYear(), quarterEnd.getUTCMonth(), quarterEnd.getUTCDate()) -
+                Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate())) / msPerDay
+        ) + 1;
+        const take = Math.min(diff, remaining);
+        const segmentEnd = addDays(current, take - 1);
+        segments.push({
+            quarter: getQuarterLabel(current),
+            start: new Date(current),
+            end: segmentEnd,
+            days: take
+        });
+        current = addDays(current, take);
+        remaining -= take;
+    }
+    return segments;
+};
+
+// Compute the candidate start date based on start_preference and optional selected_quarter
+const resolveStartDate = (start_preference, selected_quarter, next4Quarters) => {
+    if (start_preference === 'next_quarter') {
+        return getNextQuarterStart(new Date());
+    }
+    if (start_preference === 'select_quarter' && selected_quarter) {
+        const q = next4Quarters.find(q => q.quarter === selected_quarter);
+        if (q) return new Date(q.startDate);
+    }
+    // default: today
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+};
+
+
 export const Query = {
     // ─── SELLER ────────────────────────────────────────────────────────────────
     // Get authenticated seller's own product ad requests
@@ -75,7 +184,19 @@ export const Query = {
                             duration_days: d.duration_days,
                             start_date: d.start_date ? new Date(d.start_date).toISOString() : null,
                             end_date: d.end_date ? new Date(d.end_date).toISOString() : null,
-                            status: d.status
+                            status: d.status,
+                            start_preference: d.start_preference,
+                            selected_quarter: d.selected_quarter,
+                            quarters_covered: d.quarters_covered || [],
+                            pricing_breakdown: (d.pricing_breakdown || []).map(b => ({
+                                quarter: b.quarter,
+                                start: b.start ? new Date(b.start).toISOString() : null,
+                                end: b.end ? new Date(b.end).toISOString() : null,
+                                days: b.days,
+                                rate_per_day: b.rate_per_day,
+                                subtotal: b.subtotal
+                            })),
+                            total_price: d.total_price || 0
                         }))
                     };
                 })
@@ -159,7 +280,19 @@ export const Query = {
                             duration_days: d.duration_days,
                             start_date: d.start_date ? new Date(d.start_date).toISOString() : null,
                             end_date: d.end_date ? new Date(d.end_date).toISOString() : null,
-                            status: d.status
+                            status: d.status,
+                            start_preference: d.start_preference,
+                            selected_quarter: d.selected_quarter,
+                            quarters_covered: d.quarters_covered || [],
+                            pricing_breakdown: (d.pricing_breakdown || []).map(b => ({
+                                quarter: b.quarter,
+                                start: b.start ? new Date(b.start).toISOString() : null,
+                                end: b.end ? new Date(b.end).toISOString() : null,
+                                days: b.days,
+                                rate_per_day: b.rate_per_day,
+                                subtotal: b.subtotal
+                            })),
+                            total_price: d.total_price || 0
                         })),
                         createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : null,
                         updatedAt: r.updatedAt ? new Date(r.updatedAt).toISOString() : null
@@ -206,26 +339,85 @@ export const Query = {
         }
     },
 
+    // ─── QUARTER AVAILABILITY ──────────────────────────────────────────────────
+    // Returns the next 4 quarters with per-slot availability for a product
+    getUpcomingQuartersForProduct: async (_, { productId }, { models }) => {
+        try {
+            const next4Quarters = getNext4Quarters();
+
+            if (!productId) {
+                // No product specified — return quarter list with all slots available
+                const slotNames = ['banner_1', 'banner_2', 'banner_3', 'banner_4', 'stamp_1', 'stamp_2', 'stamp_3', 'stamp_4'];
+                return next4Quarters.map(q => ({
+                    quarter: q.quarter,
+                    label: q.label,
+                    startDate: q.startDate.toISOString(),
+                    endDate: q.endDate.toISOString(),
+                    slots: slotNames.map(slot => ({ slot, available: true }))
+                }));
+            }
+
+            // Load booked durations for this product
+            const allRequests = await models.ProductAdRequest.find({ product_id: productId })
+                .select('_id')
+                .lean();
+            const requestIds = allRequests.map(r => r._id);
+
+            const allDurations = requestIds.length > 0
+                ? await models.ProductAdRequestDuration.find({
+                    product_ad_request_id: { $in: requestIds },
+                    status: { $in: ['pending', 'running', 'approved'] }
+                }).select('slot start_date end_date').lean()
+                : [];
+
+            const slotNames = ['banner_1', 'banner_2', 'banner_3', 'banner_4', 'stamp_1', 'stamp_2', 'stamp_3', 'stamp_4'];
+
+            return next4Quarters.map(q => {
+                const slots = slotNames.map(slotName => {
+                    const isBooked = allDurations.some(d =>
+                        d.slot === slotName &&
+                        d.start_date && d.end_date &&
+                        new Date(d.start_date) <= q.endDate &&
+                        new Date(d.end_date) >= q.startDate
+                    );
+                    return { slot: slotName, available: !isBooked };
+                });
+                return {
+                    quarter: q.quarter,
+                    label: q.label,
+                    startDate: q.startDate.toISOString(),
+                    endDate: q.endDate.toISOString(),
+                    slots
+                };
+            });
+        } catch (err) {
+            console.error('[getUpcomingQuartersForProduct] error:', err);
+            return [];
+        }
+    },
+
     // ─── PUBLIC ────────────────────────────────────────────────────────────────
     // List all products with slot availability (for seller to pick a product to advertise)
     getProductsWithAvailableAdSlots: async (_, __, { models }) => {
         try {
             const products = await models.Product.find({ approve: true, active: true })
-                .select('fullName previewName brand_name thumbnail')
+                .select('fullName previewName brand_name thumbnail adTierId')
+                .populate('adTierId', 'name')
                 .lean();
 
             if (!products || products.length === 0) return [];
 
-            // Batch fetch all requests and durations
+            // Batch fetch all requests and durations (with end_date for freeDate)
             const allRequests = await models.ProductAdRequest.find()
                 .select('_id product_id')
                 .lean();
 
             const allDurations = await models.ProductAdRequestDuration.find({
-                status: { $in: ['running', 'approved'] }
+                status: { $in: ['pending', 'running', 'approved'] }
             })
-                .select('product_ad_request_id slot')
+                .select('product_ad_request_id slot start_date end_date')
                 .lean();
+
 
             // Map: requestId → productId
             const requestToProduct = {};
@@ -233,37 +425,74 @@ export const Query = {
                 requestToProduct[r._id.toString()] = r.product_id.toString();
             });
 
-            // Map: productId → booked slots
-            const slotsByProduct = {};
+            // Map: productId → { slot → freeDate (end_date) }
+            const slotInfoByProduct = {};
             allDurations.forEach(d => {
                 const productId = requestToProduct[d.product_ad_request_id.toString()];
                 if (!productId) return;
-                if (!slotsByProduct[productId]) slotsByProduct[productId] = [];
-                slotsByProduct[productId].push(d.slot);
+                if (!slotInfoByProduct[productId]) slotInfoByProduct[productId] = {};
+                // Keep the latest end_date per slot (in case of multiple bookings)
+                const existing = slotInfoByProduct[productId][d.slot];
+                if (!existing || new Date(d.end_date) > new Date(existing)) {
+                    slotInfoByProduct[productId][d.slot] = d.end_date ? new Date(d.end_date).toISOString() : null;
+                }
             });
 
             const slotNames = ['banner_1', 'banner_2', 'banner_3', 'banner_4', 'stamp_1', 'stamp_2', 'stamp_3', 'stamp_4'];
 
+            // Pre-compute next 4 quarters for quarter availability
+            const next4Quarters = getNext4Quarters();
+
             return products.map(p => {
                 const pid = p._id.toString();
-                const bookedSlots = slotsByProduct[pid] || [];
+                const slotInfo = slotInfoByProduct[pid] || {};
+                const bookedSlots = Object.keys(slotInfo);
                 const bookedBanner = bookedSlots.filter(s => s.startsWith('banner_')).length;
                 const bookedStamp = bookedSlots.filter(s => s.startsWith('stamp_')).length;
                 const bookedCount = bookedSlots.length;
+
+                // Quarter availability per slot
+                const productDurations = allDurations.filter(d => {
+                    const productId = requestToProduct[d.product_ad_request_id.toString()];
+                    return productId === pid;
+                });
+
+                const quarterAvailability = next4Quarters.map(q => {
+                    const slots = slotNames.map(slotName => {
+                        const isBooked = productDurations.some(d =>
+                            d.slot === slotName &&
+                            d.start_date && d.end_date &&
+                            new Date(d.start_date) <= q.endDate &&
+                            new Date(d.end_date) >= q.startDate
+                        );
+                        return { slot: slotName, available: !isBooked };
+                    });
+                    return {
+                        quarter: q.quarter,
+                        label: q.label,
+                        startDate: q.startDate.toISOString(),
+                        endDate: q.endDate.toISOString(),
+                        slots
+                    };
+                });
 
                 return {
                     id: pid,
                     productName: p.fullName || p.previewName || 'Unknown',
                     brandName: p.brand_name || null,
                     thumbnail: p.thumbnail || null,
+                    tierName: p.adTierId?.name || null,
                     availableSlots: Math.max(0, 8 - bookedCount),
                     bookedSlots: bookedCount,
                     bookedBanner,
                     bookedStamp,
                     slotStatuses: slotNames.map(slot => ({
                         slot,
-                        available: !bookedSlots.includes(slot)
-                    }))
+                        // CORRECT: Use key-existence, not truthy value — pending slots have null end_date but key IS set
+                        available: !(slot in slotInfo),
+                        freeDate: slotInfo[slot] || null,
+                    })),
+                    quarterAvailability
                 };
             });
         } catch (err) {
@@ -503,22 +732,48 @@ export const Mutation = {
 
                 console.log('[createProductAdRequest] Resolved tier:', tierId);
 
-                // Check slot availability for this product (8 slots per product)
-                const existingRequests = await models.ProductAdRequest.find({
-                    product_id: input.product_id
-                })
-                    .select('_id')
-                    .lean();
+                // Resolve start date NOW (before conflict check) so we can do date-range overlap
+                const next4Quarters = getNext4Quarters();
+                const pref = input.start_preference || 'today';
+                const startDate = resolveStartDate(pref, input.selected_quarter, next4Quarters);
+                const candidateDays = input.duration_days || 90;
+                const intendedEndDate = addDays(startDate, candidateDays - 1);
 
+                // Per-slot conflict check using DATE-RANGE OVERLAP:
+                // A slot is only blocked if an existing booking overlaps the requested time window.
+                // This means banner_3 booked for Q3 does NOT block Q4.
+                // Pending bookings with no dates stored are treated as 'always conflicting' (legacy safety).
+                const existingRequests = await models.ProductAdRequest.find({ product_id: input.product_id })
+                    .select('_id').lean();
                 const existingIds = existingRequests.map(r => r._id);
+                const requestedSlots = input.medias.map(m => m.slot);
+                if (existingIds.length > 0) {
+                    const conflictingSlots = await models.ProductAdRequestDuration.find({
+                        product_ad_request_id: { $in: existingIds },
+                        slot: { $in: requestedSlots },
+                        status: { $in: ['pending', 'running', 'approved'] },
+                        // Only check records that have dates stored (new quarter-aware bookings)
+                        start_date: { $ne: null, $lte: intendedEndDate },
+                        end_date: { $ne: null, $gte: startDate },
+                    }).select('slot').lean();
+
+                    if (conflictingSlots.length > 0) {
+                        const taken = [...new Set(conflictingSlots.map(d => d.slot))].join(', ');
+                        throw new Error(`The following slot(s) are already booked for this period: ${taken}. Please choose a different slot or a different quarter.`);
+                    }
+                }
+
+                // Guard the total 8-slot cap (count distinct slots booked in this time window)
                 const bookedCount = existingIds.length > 0
                     ? await models.ProductAdRequestDuration.countDocuments({
                         product_ad_request_id: { $in: existingIds },
-                        status: { $in: ['running', 'approved'] }
+                        status: { $in: ['pending', 'running', 'approved'] },
+                        start_date: { $ne: null, $lte: intendedEndDate },
+                        end_date: { $ne: null, $gte: startDate },
                     })
                     : 0;
 
-                if (bookedCount >= 8) throw new Error('No slots available for this product');
+                if (bookedCount >= 8) throw new Error('All 8 ad slots for this product are taken for the selected period. Please choose a different product or quarter.');
 
                 console.log('[createProductAdRequest] Booked slots for product:', bookedCount, '/ 8');
 
@@ -528,7 +783,7 @@ export const Mutation = {
                         seller_id: sellerId,
                         product_id: input.product_id,
                         tier_id: tierId,
-                        status: 'pending'
+                        status: 'pending',
                     }],
                     { session }
                 );
@@ -547,7 +802,7 @@ export const Mutation = {
                 }));
                 await models.ProductAdRequestMedia.insertMany(medias, { session });
 
-                // ─── Duration / pricing calculation (mirrors CategoryRequestResolver) ───
+                // ─── Quarter / Duration computation ──────────────────────────────────
                 const DURATION_MAP_PROD = {
                     30: { configKey: 'quarterly' },
                     90: { configKey: 'quarterly' },
@@ -557,16 +812,37 @@ export const Mutation = {
                 };
                 const configKey = DURATION_MAP_PROD[input.duration_days]?.configKey || 'quarterly';
 
+                // startDate / candidateDays / intendedEndDate already computed above for conflict check
+                const segments = splitIntervalByQuarter(startDate, candidateDays);
+                const quartersCovered = segments.map(s => s.quarter);
+
                 const durations = input.medias.map(m => {
                     const slotPriceEntry = pricingConfig.generated_prices.find(p => p.slot_name === m.slot);
                     const totalPrice = slotPriceEntry ? (slotPriceEntry[configKey] || 0) : 0;
+                    const ratePerDay = candidateDays > 0 ? totalPrice / candidateDays : 0;
+
+                    // Build pricing breakdown (subtotal proportional to days in each segment)
+                    const pricingBreakdown = segments.map(seg => ({
+                        quarter: seg.quarter,
+                        start: seg.start,
+                        end: seg.end,
+                        days: seg.days,
+                        rate_per_day: parseFloat(ratePerDay.toFixed(4)),
+                        subtotal: parseFloat((ratePerDay * seg.days).toFixed(2))
+                    }));
+
                     return {
                         product_ad_request_id: requestDoc[0]._id,
                         slot: m.slot,
-                        duration_days: input.duration_days || 90,
+                        duration_days: candidateDays,
                         status: 'pending',
-                        start_date: null,
-                        end_date: null,
+                        // Store intended dates even while pending so availability checks work
+                        start_date: startDate,
+                        end_date: intendedEndDate,
+                        start_preference: pref,
+                        selected_quarter: input.selected_quarter || null,
+                        quarters_covered: quartersCovered,
+                        pricing_breakdown: pricingBreakdown,
                         total_price: totalPrice,
                     };
                 });
