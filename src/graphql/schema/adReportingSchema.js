@@ -12,10 +12,14 @@ export const AdReportingSchema = gql`
     adCount: Int!
     bannerCount: Int!
     stampCount: Int!
+    couponDiscount: Float!
+    netRevenue: Float!
   }
 
   type RevenueReport {
     totalRevenue: Float!
+    totalCouponDiscount: Float!
+    totalNetRevenue: Float!
     period: String!
     year: Int!
     month: Int
@@ -30,6 +34,8 @@ export const AdReportingSchema = gql`
     bannerCount: Int!
     stampCount: Int!
     revenue: Float!
+    couponDiscount: Float!
+    netRevenue: Float!
   }
 
   type TierUtilization {
@@ -41,12 +47,24 @@ export const AdReportingSchema = gql`
     utilizationPercentage: Float!
   }
 
+  type QuarterSlotDetail {
+    quarter: String!
+    slot: String!
+    sellerName: String
+    categoryName: String
+    tierName: String
+    status: String
+    startDate: String
+    endDate: String
+  }
+
   type SlotUtilizationReport {
     totalSlots: Int!
     occupiedSlots: Int!
     availableSlots: Int!
     utilizationPercentage: Float!
     tierBreakdown: [TierUtilization!]!
+    quarterSlotDetails: [QuarterSlotDetail!]!
   }
 
   type PendingApprovalItem {
@@ -81,6 +99,11 @@ export const AdReportingSchema = gql`
     startDate: String!
     endDate: String!
     remainingDays: Int!
+    quartersCovered: [String]
+    totalPrice: Float
+    couponCode: String
+    couponDiscountAmount: Float
+    finalPrice: Float
   }
 
   type AdvertiserSpendingReport {
@@ -91,6 +114,7 @@ export const AdReportingSchema = gql`
     adCount: Int!
     activeAdsCount: Int!
     completedAdsCount: Int!
+    totalCouponDiscount: Float!
   }
 
   # ==========================================
@@ -117,6 +141,11 @@ export const AdReportingSchema = gql`
     endDate: String!
     remainingDays: Int!
     durationDays: Int!
+    quartersCovered: [String]
+    totalPrice: Float
+    couponCode: String
+    couponDiscountAmount: Float
+    finalPrice: Float
     media: AdvertiserActiveAdMedia
   }
 
@@ -133,6 +162,11 @@ export const AdReportingSchema = gql`
     endDate: String
     durationDays: Int!
     completedDate: String
+    quartersCovered: [String]
+    totalPrice: Float
+    couponCode: String
+    couponDiscountAmount: Float
+    finalPrice: Float
   }
 
   type AdValidityInfo {
@@ -144,6 +178,7 @@ export const AdReportingSchema = gql`
     remainingDays: Int!
     status: String!
     isExpiringSoon: Boolean!
+    quartersCovered: [String]
   }
 
   # ==========================================

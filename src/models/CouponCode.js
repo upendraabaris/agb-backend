@@ -23,6 +23,32 @@ const coupaonCodeSchema = new mongoose.Schema(
     active: {
       type: Boolean,
     },
+    couponType: {
+      type: String,
+      enum: ['product', 'ad'],
+      default: 'product',
+    },
+    discountType: {
+      type: String,
+      enum: ['percentage', 'flat'],
+      default: 'percentage',
+    },
+    maxUses: {
+      type: Number,
+      default: null,
+    },
+    usedCount: {
+      type: Number,
+      default: 0,
+    },
+    perUserLimit: {
+      type: Number,
+      default: 1,
+    },
+    minOrderAmount: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true }
 );

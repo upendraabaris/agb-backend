@@ -21,6 +21,12 @@ const CategoryRequestDurationSchema = new mongoose.Schema({
     subtotal: { type: Number }
   }],
   total_price: { type: Number, default: 0 },
+  // Coupon tracking fields
+  coupon_code: { type: String, default: null },
+  coupon_discount_type: { type: String, enum: ['percentage', 'flat', null], default: null },
+  coupon_discount_value: { type: Number, default: 0 },
+  coupon_discount_amount: { type: Number, default: 0 },
+  final_price: { type: Number, default: 0 },
 }, { timestamps: true });
 
 const CategoryRequestDuration = mongoose.model('CategoryRequestDuration', CategoryRequestDurationSchema);

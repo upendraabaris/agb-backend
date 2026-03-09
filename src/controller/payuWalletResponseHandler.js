@@ -3,6 +3,21 @@
 import crypto from "crypto";
 import WalletTransaction from "../models/WalletTransaction.js";
 import SellerWallet from "../models/SellerWallet.js";
+import User from "../models/User.js";
+
+// Determine the wallet redirect base path based on the user's role.
+// Ad Managers are redirected to /adManager/wallet, everyone else to /seller/wallet.
+async function getWalletPath(sellerId) {
+    try {
+        const user = await User.findById(sellerId).select("role").lean();
+        if (user && user.role && user.role.includes("adManager")) {
+            return "/adManager/wallet";
+        }
+    } catch (e) {
+        console.error("[getWalletPath] error looking up user role:", e);
+    }
+    return "/seller/wallet";
+}
 
 // Verify PayU response hash (reverse hash).
 // PayU Node.js SDK formula:
@@ -48,6 +63,9 @@ export async function payuWalletResponse(request, response) {
             return response.redirect(302, `${frontendBase}/seller/wallet?status=failed`);
         }
 
+        // Determine redirect path based on user role (adManager → /adManager/wallet, else /seller/wallet)
+        const walletPath = await getWalletPath(transaction.seller_id);
+
         // Verify hash to prevent tampering
         const hashValid = verifyPayUHash(data);
         if (!hashValid) {
@@ -56,7 +74,7 @@ export async function payuWalletResponse(request, response) {
             // For production, uncomment the next 3 lines and remove the comment below.
             // transaction.status = "failed";
             // await transaction.save();
-            // return response.redirect(302, `${frontendBase}/seller/wallet?status=failed`);
+            // return response.redirect(302, `${frontendBase}${walletPath}?status=failed`);
         }
 
         if (status === "success") {
@@ -73,12 +91,12 @@ export async function payuWalletResponse(request, response) {
             );
 
             console.log(`[payuWalletResponse] ✅ Wallet credited: seller=${transaction.seller_id}, amount=${transaction.amount}`);
-            return response.redirect(302, `${frontendBase}/seller/wallet?status=success`);
+            return response.redirect(302, `${frontendBase}${walletPath}?status=success`);
         } else {
             transaction.status = "failed";
             await transaction.save();
             console.log(`[payuWalletResponse] ❌ Payment not successful: txnid=${txnid}, status=${status}`);
-            return response.redirect(302, `${frontendBase}/seller/wallet?status=failed`);
+            return response.redirect(302, `${frontendBase}${walletPath}?status=failed`);
         }
     } catch (err) {
         console.error("[payuWalletResponse] error:", err);
