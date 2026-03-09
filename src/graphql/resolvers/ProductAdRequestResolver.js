@@ -737,7 +737,26 @@ export const Mutation = {
                 const pref = input.start_preference || 'today';
                 const startDate = resolveStartDate(pref, input.selected_quarter, next4Quarters);
                 const candidateDays = input.duration_days || 90;
-                const intendedEndDate = addDays(startDate, candidateDays - 1);
+                // Compute intendedEndDate from actual quarter boundaries (not a fixed +90 days)
+                // so conflict checks are accurate for Q2 (91 days), Q3/Q4 (92 days), etc.
+                const NUM_Q_MAP = { 30: 1, 90: 1, 180: 2, 365: 4, 360: 4 };
+                const numQConflict = NUM_Q_MAP[candidateDays] || 1;
+                let intendedEndDate;
+                if (pref !== 'today') {
+                    // select_quarter / next_quarter: numQ full quarters from startDate
+                    let cur = new Date(startDate);
+                    for (let i = 0; i < numQConflict; i++) {
+                        intendedEndDate = getQuarterEnd(cur);
+                        cur = getNextQuarterStart(cur);
+                    }
+                } else {
+                    // today: partial current Q + numQ full quarters starting from next Q
+                    let cur = getNextQuarterStart(startDate);
+                    for (let i = 0; i < numQConflict; i++) {
+                        intendedEndDate = getQuarterEnd(cur);
+                        cur = getNextQuarterStart(cur);
+                    }
+                }
 
                 // Per-slot conflict check using DATE-RANGE OVERLAP:
                 // A slot is only blocked if an existing booking overlaps the requested time window.
@@ -802,48 +821,126 @@ export const Mutation = {
                 }));
                 await models.ProductAdRequestMedia.insertMany(medias, { session });
 
-                // ─── Quarter / Duration computation ──────────────────────────────────
+                // ─── Quarter / Duration + Pricing (mirrors category ad logic exactly) ─────
                 const DURATION_MAP_PROD = {
-                    30: { configKey: 'quarterly' },
-                    90: { configKey: 'quarterly' },
-                    180: { configKey: 'half_yearly' },
-                    365: { configKey: 'yearly' },
-                    360: { configKey: 'yearly' },
+                    30: { configKey: 'quarterly', numQuarters: 1 },
+                    90: { configKey: 'quarterly', numQuarters: 1 },
+                    180: { configKey: 'half_yearly', numQuarters: 2 },
+                    365: { configKey: 'yearly', numQuarters: 4 },
+                    360: { configKey: 'yearly', numQuarters: 4 },
                 };
-                const configKey = DURATION_MAP_PROD[input.duration_days]?.configKey || 'quarterly';
-
-                // startDate / candidateDays / intendedEndDate already computed above for conflict check
-                const segments = splitIntervalByQuarter(startDate, candidateDays);
-                const quartersCovered = segments.map(s => s.quarter);
+                const { configKey, numQuarters: numQ } = DURATION_MAP_PROD[candidateDays] || { configKey: 'quarterly', numQuarters: 1 };
 
                 const durations = input.medias.map(m => {
                     const slotPriceEntry = pricingConfig.generated_prices.find(p => p.slot_name === m.slot);
-                    const totalPrice = slotPriceEntry ? (slotPriceEntry[configKey] || 0) : 0;
-                    const ratePerDay = candidateDays > 0 ? totalPrice / candidateDays : 0;
+                    const slotPrice = slotPriceEntry ? (slotPriceEntry[configKey] || 0) : 0;
+                    const quarterlyPrice = slotPriceEntry ? (slotPriceEntry.quarterly || 0) : 0;
 
-                    // Build pricing breakdown (subtotal proportional to days in each segment)
-                    const pricingBreakdown = segments.map(seg => ({
-                        quarter: seg.quarter,
-                        start: seg.start,
-                        end: seg.end,
-                        days: seg.days,
-                        rate_per_day: parseFloat(ratePerDay.toFixed(4)),
-                        subtotal: parseFloat((ratePerDay * seg.days).toFixed(2))
-                    }));
+                    let durStart, durEnd;
+                    const segments = [];
+                    let proRataCharge = 0;
+
+                    if (pref !== 'today') {
+                        // ── "select_quarter" or "next_quarter": starts exactly at a quarter boundary ──
+                        // Charge full price for numQ complete quarters.
+                        let cursor = new Date(startDate);
+                        for (let i = 0; i < numQ; i++) {
+                            const qEnd = getQuarterEnd(cursor);
+                            segments.push({
+                                quarter: getQuarterLabel(cursor),
+                                start: new Date(cursor),
+                                end: qEnd,
+                                days: Math.floor((qEnd - cursor) / (24 * 60 * 60 * 1000)) + 1,
+                            });
+                            cursor = getNextQuarterStart(cursor);
+                        }
+                        durStart = segments[0].start;
+                        durEnd = segments[segments.length - 1].end;
+                    } else {
+                        // ── "today": charge pro-rata for remaining current quarter,
+                        //    then numQ full quarters from next quarter (same as category ads) ──
+                        const todayUTC = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate()));
+                        const currentQEnd = getQuarterEnd(todayUTC);
+                        const remainingDays = Math.floor((currentQEnd - todayUTC) / (24 * 60 * 60 * 1000)) + 1;
+
+                        // Full quarter length for pro-rata base
+                        const qStartMonth = Math.floor(todayUTC.getUTCMonth() / 3) * 3;
+                        const currentQStart = new Date(Date.UTC(todayUTC.getUTCFullYear(), qStartMonth, 1));
+                        const fullQuarterDays = Math.floor((currentQEnd - currentQStart) / (24 * 60 * 60 * 1000)) + 1;
+
+                        // Pro-rata = (remaining / full) × quarterly price for this slot
+                        proRataCharge = Math.round((remainingDays / fullQuarterDays) * quarterlyPrice);
+
+                        segments.push({
+                            quarter: getQuarterLabel(todayUTC),
+                            start: new Date(todayUTC),
+                            end: currentQEnd,
+                            days: remainingDays,
+                        });
+                        durStart = todayUTC;
+
+                        // Then numQ full quarters from next quarter
+                        let cursor = getNextQuarterStart(todayUTC);
+                        for (let i = 0; i < numQ; i++) {
+                            const qEnd = getQuarterEnd(cursor);
+                            segments.push({
+                                quarter: getQuarterLabel(cursor),
+                                start: new Date(cursor),
+                                end: qEnd,
+                                days: Math.floor((qEnd - cursor) / (24 * 60 * 60 * 1000)) + 1,
+                            });
+                            cursor = getNextQuarterStart(cursor);
+                        }
+                        durEnd = segments[segments.length - 1].end;
+                    }
+
+                    const finalPrice = slotPrice + proRataCharge;
+                    const totalDays = segments.reduce((sum, s) => sum + s.days, 0);
+
+                    // Build breakdown — mirrors category: pro-rata segment + paid segments
+                    let pricingBreakdown;
+                    if (proRataCharge > 0 && segments.length > 1) {
+                        const proRataSeg = segments[0];
+                        const paidSegs = segments.slice(1);
+                        const paidTotalDays = paidSegs.reduce((sum, s) => sum + s.days, 0);
+                        const proRataRate = Math.round((proRataCharge / proRataSeg.days) * 100) / 100;
+                        const paidRate = Math.round((slotPrice / paidTotalDays) * 100) / 100;
+                        pricingBreakdown = [
+                            {
+                                quarter: proRataSeg.quarter, start: proRataSeg.start.toISOString(),
+                                end: proRataSeg.end.toISOString(), days: proRataSeg.days,
+                                rate_per_day: proRataRate, subtotal: proRataCharge,
+                            },
+                            ...paidSegs.map(s => ({
+                                quarter: s.quarter, start: s.start.toISOString(), end: s.end.toISOString(),
+                                days: s.days, rate_per_day: paidRate,
+                                subtotal: Math.round((s.days / paidTotalDays) * slotPrice),
+                            })),
+                        ];
+                    } else {
+                        // Quarter-boundary start: uniform rate across all segments
+                        const ratePerDay = totalDays > 0 ? Math.round((finalPrice / totalDays) * 100) / 100 : 0;
+                        pricingBreakdown = segments.map(s => ({
+                            quarter: s.quarter, start: s.start.toISOString(), end: s.end.toISOString(),
+                            days: s.days, rate_per_day: ratePerDay,
+                            subtotal: Math.round(ratePerDay * s.days),
+                        }));
+                    }
+
+                    const quartersCovered = [...new Set(segments.map(s => s.quarter))];
 
                     return {
                         product_ad_request_id: requestDoc[0]._id,
                         slot: m.slot,
-                        duration_days: candidateDays,
+                        duration_days: totalDays,
                         status: 'pending',
-                        // Store intended dates even while pending so availability checks work
-                        start_date: startDate,
-                        end_date: intendedEndDate,
+                        start_date: durStart,
+                        end_date: durEnd,
                         start_preference: pref,
                         selected_quarter: input.selected_quarter || null,
                         quarters_covered: quartersCovered,
                         pricing_breakdown: pricingBreakdown,
-                        total_price: totalPrice,
+                        total_price: finalPrice,
                     };
                 });
                 await models.ProductAdRequestDuration.insertMany(durations, { session });
@@ -877,42 +974,167 @@ export const Mutation = {
                 if (adRequest.status === 'rejected') throw new Error('Cannot approve a rejected request');
                 if (adRequest.status === 'approved') throw new Error('Request already approved');
 
-                // Calculate end_date from the first duration entry's duration_days
-                const firstDuration = await models.ProductAdRequestDuration.findOne({
+                // Load ALL duration docs (need slot names for pricing recalc + quarter info)
+                const allDurations = await models.ProductAdRequestDuration.find({
                     product_ad_request_id: requestId
                 }).lean();
+                const firstDuration = allDurations[0] || null;
 
                 const durationDays = firstDuration?.duration_days || 90;
-                const startDateObj = new Date(start_date);
-                const endDateObj = new Date(startDateObj);
-                endDateObj.setDate(endDateObj.getDate() + durationDays);
+                const selectedQuarter = firstDuration?.selected_quarter || null;
 
-                // Update all duration entries for this request
-                await models.ProductAdRequestDuration.updateMany(
-                    { product_ad_request_id: requestId },
-                    {
-                        $set: {
-                            status: 'approved',
-                            start_date: startDateObj,
-                            end_date: endDateObj
+                // Determine actual start date:
+                // Prefer admin-provided start_date, fall back to stored intended start
+                let startDateObj;
+                if (start_date) {
+                    startDateObj = new Date(start_date);
+                } else if (firstDuration?.start_date) {
+                    startDateObj = new Date(firstDuration.start_date);
+                } else {
+                    startDateObj = new Date();
+                }
+
+                const msPerDay = 24 * 60 * 60 * 1000;
+
+                // ─── Quarter-aware end date + pro-rata pricing recalculation ───────────────
+                // When admin provides a start_date AND a selected_quarter exists:
+                //   • Pin end_date to the LAST DAY of the selected quarter (not start + N days)
+                //   • Recalculate each slot's price: (actualDays / fullQuarterDays) × quarterlyPrice
+                // This way, if Q2 was booked but admin starts May 1, ad runs May 1–Jun 30 (61 days)
+                // and the seller is charged for exactly those 61 days.
+                let endDateObj;
+                let totalCost;
+                const updatedSlotPrices = {}; // durId → { price, days }
+
+                if (selectedQuarter && start_date) {
+                    // Parse the selected quarter (e.g. "Q2 2026" → qNum=2, qYear=2026)
+                    const [qPart, yearPart] = selectedQuarter.split(' ');
+                    const qNum = parseInt(qPart.replace('Q', ''), 10);
+                    const qYear = parseInt(yearPart, 10);
+
+                    // Validate: admin start must be within the selected quarter
+                    const qStart = new Date(Date.UTC(qYear, (qNum - 1) * 3, 1));
+                    const qEnd = new Date(Date.UTC(qYear, qNum * 3, 0, 23, 59, 59, 999));
+                    if (startDateObj < qStart || startDateObj > qEnd) {
+                        throw new Error(
+                            `This ad was booked for ${selectedQuarter} (${qStart.toISOString().slice(0, 10)} – ${qEnd.toISOString().slice(0, 10)}). ` +
+                            `Please set a start date within that quarter.`
+                        );
+                    }
+
+                    // Pin end to quarter's last day
+                    endDateObj = qEnd;
+
+                    // Actual days the ad will run (start → quarter end, inclusive)
+                    const actualDays = Math.floor((endDateObj - startDateObj) / msPerDay) + 1;
+                    const fullQDays = Math.floor((qEnd - qStart) / msPerDay) + 1;
+
+                    // Load pricing config to get each slot's quarterly rate
+                    const pricingConfig = await AdPricingConfig.findOne(
+                        { tier_id: adRequest.tier_id, is_active: true }
+                    ).lean();
+
+                    let costAccum = 0;
+                    for (const dur of allDurations) {
+                        const slotEntry = pricingConfig?.generated_prices?.find(p => p.slot_name === dur.slot);
+                        const quarterlyRate = slotEntry?.quarterly || dur.total_price || 0;
+                        const proRatedPrice = Math.round((actualDays / fullQDays) * quarterlyRate);
+                        updatedSlotPrices[dur._id.toString()] = { price: proRatedPrice, days: actualDays };
+                        costAccum += proRatedPrice;
+                    }
+                    totalCost = costAccum;
+
+                } else if (firstDuration?.end_date && !start_date) {
+                    // Admin did NOT override start → use stored intended end date and price
+                    endDateObj = new Date(firstDuration.end_date);
+                    totalCost = allDurations.reduce((sum, d) => sum + (d.total_price || 0), 0);
+
+                    // Validate quarter if applicable (for logged history)
+                    if (selectedQuarter) {
+                        const [qPart, yearPart] = selectedQuarter.split(' ');
+                        const qNum = parseInt(qPart.replace('Q', ''), 10);
+                        const qYear = parseInt(yearPart, 10);
+                        const qStart = new Date(Date.UTC(qYear, (qNum - 1) * 3, 1));
+                        const qEnd = new Date(Date.UTC(qYear, qNum * 3, 0, 23, 59, 59, 999));
+                        if (startDateObj < qStart || startDateObj > qEnd) {
+                            throw new Error(
+                                `This ad was booked for ${selectedQuarter} (${qStart.toISOString().slice(0, 10)} – ${qEnd.toISOString().slice(0, 10)}). ` +
+                                `Please set a start date within that quarter.`
+                            );
                         }
-                    },
-                    { session }
-                );
+                    }
 
-                // Update the request status
+                } else {
+                    // Old record (no selected_quarter) — keep current behaviour (start + durationDays)
+                    endDateObj = new Date(startDateObj);
+                    endDateObj.setUTCDate(endDateObj.getUTCDate() + durationDays - 1);
+                    totalCost = allDurations.reduce((sum, d) => sum + (d.total_price || 0), 0);
+                }
+
+                console.log('[approveProductAdRequest] Total ad cost:', totalCost);
+
+                // ── Update all duration entries (status, dates, and recalculated price if applicable) ──
+                for (const dur of allDurations) {
+                    const reCalc = updatedSlotPrices[dur._id.toString()];
+                    await models.ProductAdRequestDuration.findByIdAndUpdate(
+                        dur._id,
+                        {
+                            $set: {
+                                status: 'approved',
+                                start_date: startDateObj,
+                                end_date: endDateObj,
+                                ...(reCalc ? { total_price: reCalc.price, duration_days: reCalc.days } : {}),
+                            }
+                        },
+                        { session }
+                    );
+                }
+
+                // ── Check seller wallet balance ──
+                const sellerId = adRequest.seller_id;
+                let wallet = await SellerWallet.findOne({ seller_id: sellerId }).session(session);
+                if (!wallet) {
+                    wallet = (await SellerWallet.create([{ seller_id: sellerId, balance: 0 }], { session }))[0];
+                }
+                if (wallet.balance < totalCost) {
+                    throw new Error(
+                        `Insufficient wallet balance. Seller has ₹${wallet.balance} but ₹${totalCost} is required.`
+                    );
+                }
+
+                // ── Deduct from wallet ──
+                wallet.balance -= totalCost;
+                await wallet.save({ session });
+                console.log('[approveProductAdRequest] Wallet deducted. New balance:', wallet.balance);
+
+                // ── Create debit transaction record ──
+                const productName = adRequest.product_id?.fullName || adRequest.product_id?.previewName || 'Unknown';
+                const slotNames = allDurations.map(d => d.slot).join(', ');
+                await WalletTransaction.create([{
+                    seller_id: sellerId,
+                    type: 'debit',
+                    amount: totalCost,
+                    source: 'ad_deduction',
+                    description: `Product ad approved for ${productName} (${slotNames})`,
+                    status: 'success',
+                }], { session });
+
+                console.log('[approveProductAdRequest] Wallet transaction created');
+
+                // ── Update request status + total_cost ──
                 adRequest.status = 'approved';
                 adRequest.approved_date = new Date();
+                adRequest.total_cost = totalCost;
                 await adRequest.save({ session });
 
                 await session.commitTransaction();
                 session.endSession();
 
-                console.log('[approveProductAdRequest] Approved request:', requestId);
+                console.log('[approveProductAdRequest] Approved request:', requestId, '— Deducted ₹' + totalCost);
 
                 return {
                     success: true,
-                    message: `Product ad approved successfully.`,
+                    message: `Product ad approved. ₹${totalCost} deducted from seller wallet.`,
                     data: adRequest
                 };
             } catch (err) {
@@ -936,6 +1158,12 @@ export const Mutation = {
                 adRequest.status = 'rejected';
                 adRequest.rejection_reason = rejection_reason || 'No reason provided';
                 await adRequest.save();
+
+                // Also mark all duration records as rejected so the slots are freed immediately
+                await models.ProductAdRequestDuration.updateMany(
+                    { product_ad_request_id: requestId },
+                    { $set: { status: 'rejected' } }
+                );
 
                 console.log('[rejectProductAdRequest] Rejected request:', requestId);
 
