@@ -85,6 +85,12 @@ export const ProductType = gql`
     productComm: Float
     productCommType: String
     seriesType: String
+    adTierId: AdTierInfo
+  }
+
+  type AdTierInfo {
+    id: ID!
+    name: String
   }
 
   type SearchProduct {

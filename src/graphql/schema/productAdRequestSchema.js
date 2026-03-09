@@ -36,9 +36,38 @@ export const ProductAdRequestSchema = gql`
     start_date: String
     end_date: String
     status: String
+    start_preference: String
+    selected_quarter: String
+    quarters_covered: [String]
+    pricing_breakdown: [ProductAdPricingBreakdown]
+    total_price: Float
     createdAt: String
     updatedAt: String
   }
+
+  type ProductAdPricingBreakdown {
+    quarter: String
+    start: String
+    end: String
+    days: Int
+    rate_per_day: Float
+    subtotal: Float
+  }
+
+  # Upcoming quarter info (for quarter selection UI)
+  type ProductAdQuarterInfo {
+    quarter: String!
+    label: String!
+    startDate: String!
+    endDate: String!
+    slots: [ProductAdQuarterSlotStatus!]!
+  }
+
+  type ProductAdQuarterSlotStatus {
+    slot: String!
+    available: Boolean!
+  }
+    
 
   # For seller's "My Product Ads" dashboard
   type SellerProductAdInfo {
@@ -92,11 +121,13 @@ export const ProductAdRequestSchema = gql`
     productName: String!
     brandName: String
     thumbnail: String
+    tierName: String
     availableSlots: Int!
     bookedSlots: Int!
     bookedBanner: Int!
     bookedStamp: Int!
     slotStatuses: [SlotStatus!]!
+    quarterAvailability: [ProductAdQuarterInfo!]!
   }
 
   type ProductApprovalResponse {
@@ -105,10 +136,43 @@ export const ProductAdRequestSchema = gql`
     data: ProductAdRequest
   }
 
+  # Pricing result for a product's tier
+  type ProductPricingResult {
+    tierId: ID!
+    tierName: String!
+    adCategories: [ProductAdPricingEntry!]!
+  }
+
+  type ProductAdPricingEntry {
+    id: ID!
+    ad_type: String!
+    slot_name: String!
+    slot_position: Int!
+    price: Float!
+    priority: Int!
+    duration_days: Int!
+  }
+
+  type ProductAdTierResponse {
+    success: Boolean!
+    message: String
+  }
+
+  input ProductAdRequestMediaInput {
+    slot: String!
+    media_type: String
+    mobile_image_url: String
+    desktop_image_url: String
+    mobile_redirect_url: String
+    desktop_redirect_url: String
+  }
+
   input CreateProductAdRequestInput {
     product_id: ID!
     duration_days: Int
-    medias: [CategoryRequestMediaInput!]!
+    start_preference: String
+    selected_quarter: String
+    medias: [ProductAdRequestMediaInput!]!
   }
 
   input ApproveProductAdRequestInput {
@@ -128,16 +192,24 @@ export const ProductAdRequestSchema = gql`
     # Admin queries (JWT-authenticated)
     getProductAdRequestsForApproval(status: String): [ProductAdApprovalRequest!]!
 
+    # Pricing query — returns tier pricing for a product
+    getProductAdPricing(productId: ID!): ProductPricingResult
+
     # Public/display queries
     getProductsWithAvailableAdSlots: [ProductWithAdSlots!]!
     getApprovedAdsByProduct(productId: ID, productName: String): [ApprovedProductAd!]!
     getProductBannerAds: [ApprovedProductAd!]!
     getProductStampAds: [ApprovedProductAd!]!
+
+    # Quarter selection — returns current + next 3 quarters with per-product slot availability
+    getUpcomingQuartersForProduct(productId: ID): [ProductAdQuarterInfo!]!
   }
 
   extend type Mutation {
     createProductAdRequest(input: CreateProductAdRequestInput!): ProductAdRequest
     approveProductAdRequest(input: ApproveProductAdRequestInput!): ProductApprovalResponse!
     rejectProductAdRequest(input: RejectProductAdRequestInput!): ProductApprovalResponse!
+    # Admin: assign ad tier to a product
+    setProductAdTier(productId: ID!, tierId: ID!): ProductAdTierResponse!
   }
 `;
