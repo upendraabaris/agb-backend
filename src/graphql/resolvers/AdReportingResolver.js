@@ -1,6 +1,11 @@
 import jwt from 'jsonwebtoken';
 import authenticate from '../../middlewares/auth.js';
 
+// Helper: get actual revenue amount (final_price after coupon, or total_price for old records)
+const getEffectivePrice = (dur) => {
+    return (dur.final_price != null && dur.final_price > 0) ? dur.final_price : (dur.total_price || 0);
+};
+
 export const Query = {
     // ==========================================
     // ADMIN REPORTING QUERIES
@@ -30,7 +35,7 @@ export const Query = {
                 throw new Error('Invalid period. Use: monthly, quarterly, or annual');
             }
 
-            // Find all approved/running category requests in the date range
+            // Find all approved/running/completed category requests in the date range
             const categoryRequests = await models.CategoryRequest.find({
                 status: { $in: ['approved', 'running'] },
                 createdAt: { $gte: startDate, $lte: endDate }
@@ -41,9 +46,11 @@ export const Query = {
             // Get all tier IDs
             const tierIds = [...new Set(categoryRequests.map(cr => cr.tier_id?._id?.toString()).filter(Boolean))];
 
-            // Calculate revenue per tier
+            // Calculate revenue per tier using actual prices paid
             const breakdown = [];
             let totalRevenue = 0;
+            let totalCouponDiscount = 0;
+            let totalNetRevenue = 0;
 
             for (const tierId of tierIds) {
                 const tierRequests = categoryRequests.filter(
@@ -55,42 +62,32 @@ export const Query = {
                 // Get request IDs for this tier
                 const requestIds = tierRequests.map(req => req._id);
 
-                // Get all media slots for these requests
-                const mediaSlots = await models.CategoryRequestMedia.find({
-                    category_request_id: { $in: requestIds }
+                // Get all durations for these requests (contains actual pricing)
+                const durations = await models.CategoryRequestDuration.find({
+                    category_request_id: { $in: requestIds },
+                    status: { $in: ['approved', 'running', 'completed'] }
                 }).lean();
 
-                // Count banner and stamp slots
+                // Count banner and stamp slots, sum revenue and coupon discounts
                 let bannerCount = 0;
                 let stampCount = 0;
+                let tierRevenue = 0;
+                let tierCouponDiscount = 0;
 
-                for (const media of mediaSlots) {
-                    if (media.slot.startsWith('banner')) {
+                for (const dur of durations) {
+                    if (dur.slot.startsWith('banner')) {
                         bannerCount++;
-                    } else if (media.slot.startsWith('stamp')) {
+                    } else if (dur.slot.startsWith('stamp')) {
                         stampCount++;
                     }
+                    tierRevenue += dur.total_price || 0;
+                    tierCouponDiscount += dur.coupon_discount_amount || 0;
                 }
 
-                // Get pricing for this tier (separate prices for banner and stamp)
-                const bannerPrice = await models.AdCategory.findOne({
-                    categoryMasterId: tierId,
-                    ad_type: 'banner',
-                    is_active: true
-                }).lean();
-
-                const stampPrice = await models.AdCategory.findOne({
-                    categoryMasterId: tierId,
-                    ad_type: 'stamp',
-                    is_active: true
-                }).lean();
-
-                // Calculate revenue based on actual slots purchased
-                const tierRevenue =
-                    (bannerCount * (bannerPrice?.price || 0)) +
-                    (stampCount * (stampPrice?.price || 0));
-
+                const tierNetRevenue = tierRevenue - tierCouponDiscount;
                 totalRevenue += tierRevenue;
+                totalCouponDiscount += tierCouponDiscount;
+                totalNetRevenue += tierNetRevenue;
 
                 breakdown.push({
                     tierId,
@@ -98,12 +95,16 @@ export const Query = {
                     revenue: tierRevenue,
                     adCount: bannerCount + stampCount,
                     bannerCount,
-                    stampCount
+                    stampCount,
+                    couponDiscount: tierCouponDiscount,
+                    netRevenue: tierNetRevenue
                 });
             }
 
             return {
                 totalRevenue,
+                totalCouponDiscount,
+                totalNetRevenue,
                 period,
                 year,
                 month: month || null,
@@ -140,9 +141,10 @@ export const Query = {
             // Get all request IDs
             const requestIds = categoryRequests.map(cr => cr._id);
 
-            // Get all media to count banner vs stamp
-            const allMedia = await models.CategoryRequestMedia.find({
-                category_request_id: { $in: requestIds }
+            // Get all durations (contains actual pricing via total_price)
+            const allDurations = await models.CategoryRequestDuration.find({
+                category_request_id: { $in: requestIds },
+                status: { $in: ['approved', 'running', 'completed'] }
             }).lean();
 
             // Group by tier
@@ -159,48 +161,37 @@ export const Query = {
                         totalAdsSold: 0,
                         bannerCount: 0,
                         stampCount: 0,
-                        revenue: 0
+                        revenue: 0,
+                        couponDiscount: 0,
+                        netRevenue: 0
                     };
                 }
 
-                // Count media types for this request
-                const requestMedia = allMedia.filter(
-                    m => m.category_request_id.toString() === request._id.toString()
+                // Get durations for this request
+                const requestDurations = allDurations.filter(
+                    d => d.category_request_id.toString() === request._id.toString()
                 );
 
-                requestMedia.forEach(media => {
-                    if (media.slot.startsWith('banner')) {
+                requestDurations.forEach(dur => {
+                    if (dur.slot.startsWith('banner')) {
                         tierMap[tierId].bannerCount++;
-                    } else if (media.slot.startsWith('stamp')) {
+                    } else if (dur.slot.startsWith('stamp')) {
                         tierMap[tierId].stampCount++;
                     }
+                    tierMap[tierId].revenue += dur.total_price || 0;
+                    tierMap[tierId].couponDiscount += dur.coupon_discount_amount || 0;
                 });
 
-                tierMap[tierId].totalAdsSold += requestMedia.length;
+                tierMap[tierId].totalAdsSold += requestDurations.length;
             }
 
-            // Calculate revenue for each tier using correct pricing
-            for (const tierId in tierMap) {
-                // Get pricing for this tier (separate prices for banner and stamp)
-                const bannerPrice = await models.AdCategory.findOne({
-                    categoryMasterId: tierId,
-                    ad_type: 'banner',
-                    is_active: true
-                }).lean();
+            // Calculate netRevenue for each tier
+            const result = Object.values(tierMap).map(t => ({
+                ...t,
+                netRevenue: t.revenue - t.couponDiscount
+            }));
 
-                const stampPrice = await models.AdCategory.findOne({
-                    categoryMasterId: tierId,
-                    ad_type: 'stamp',
-                    is_active: true
-                }).lean();
-
-                // Calculate revenue based on actual slots purchased
-                tierMap[tierId].revenue =
-                    (tierMap[tierId].bannerCount * (bannerPrice?.price || 0)) +
-                    (tierMap[tierId].stampCount * (stampPrice?.price || 0));
-            }
-
-            return Object.values(tierMap);
+            return result;
         } catch (err) {
             console.error('[getAdminTierSalesReport] error:', err);
             throw new Error('Failed to generate tier sales report: ' + err.message);
@@ -208,7 +199,7 @@ export const Query = {
     },
 
     /**
-     * Get slot utilization across all tiers
+     * Get slot utilization across all tiers - quarter-aware
      */
     getAdminSlotUtilization: async (_, __, { models }) => {
         try {
@@ -224,12 +215,12 @@ export const Query = {
             const slotsPerCategory = 8;
             const totalSlots = categoriesWithTiers * slotsPerCategory;
 
-            // Get all running slots
-            const runningSlots = await models.CategoryRequestDuration.find({
-                status: 'running'
+            // Get all occupied durations (approved = active, running = legacy active)
+            const occupiedDurations = await models.CategoryRequestDuration.find({
+                status: { $in: ['approved', 'running'] }
             }).lean();
 
-            const occupiedSlots = runningSlots.length;
+            const occupiedSlots = occupiedDurations.length;
             const availableSlots = totalSlots - occupiedSlots;
             const utilizationPercentage = totalSlots > 0 ? (occupiedSlots / totalSlots) * 100 : 0;
 
@@ -249,9 +240,9 @@ export const Query = {
                     tier_id: tier._id
                 }).distinct('_id');
 
-                // Count running slots for this tier
+                // Count occupied slots for this tier (approved + running)
                 const tierRunningSlots = await models.CategoryRequestDuration.countDocuments({
-                    status: 'running',
+                    status: { $in: ['approved', 'running'] },
                     category_request_id: { $in: tierCategoryRequestIds }
                 });
 
@@ -269,12 +260,65 @@ export const Query = {
                 });
             }
 
+            // Build quarter-slot detail list showing exactly who booked what in which quarter
+            const quarterSlotDetails = [];
+            if (occupiedDurations.length > 0) {
+                // Get all category requests for these durations
+                const crIds = [...new Set(occupiedDurations.map(d => d.category_request_id.toString()))];
+                const categoryRequests = await models.CategoryRequest.find({
+                    _id: { $in: crIds }
+                })
+                    .populate('seller_id', 'firstName lastName')
+                    .populate('category_id', 'name')
+                    .populate('tier_id', 'name')
+                    .lean();
+
+                const crMap = {};
+                for (const cr of categoryRequests) {
+                    crMap[cr._id.toString()] = cr;
+                }
+
+                for (const dur of occupiedDurations) {
+                    const cr = crMap[dur.category_request_id.toString()];
+                    const sellerObj = cr?.seller_id;
+                    const sellerName = sellerObj ? `${sellerObj.firstName || ''} ${sellerObj.lastName || ''}`.trim() || 'Unknown' : 'Unknown';
+                    const categoryName = cr?.category_id?.name || 'Unknown';
+                    const tierName = cr?.tier_id?.name || 'Unknown';
+
+                    // Create one entry per quarter covered
+                    const quarters = dur.quarters_covered && dur.quarters_covered.length > 0
+                        ? dur.quarters_covered
+                        : ['N/A'];
+
+                    for (const q of quarters) {
+                        quarterSlotDetails.push({
+                            quarter: q,
+                            slot: dur.slot,
+                            sellerName,
+                            categoryName,
+                            tierName,
+                            status: dur.status,
+                            startDate: dur.start_date ? new Date(dur.start_date).toISOString() : '',
+                            endDate: dur.end_date ? new Date(dur.end_date).toISOString() : ''
+                        });
+                    }
+                }
+
+                // Sort by quarter then slot
+                quarterSlotDetails.sort((a, b) => {
+                    if (a.quarter < b.quarter) return -1;
+                    if (a.quarter > b.quarter) return 1;
+                    return a.slot.localeCompare(b.slot);
+                });
+            }
+
             return {
                 totalSlots,
                 occupiedSlots,
                 availableSlots,
                 utilizationPercentage,
-                tierBreakdown
+                tierBreakdown,
+                quarterSlotDetails
             };
         } catch (err) {
             console.error('[getAdminSlotUtilization] error:', err);
@@ -290,7 +334,7 @@ export const Query = {
             const pendingRequests = await models.CategoryRequest.find({
                 status: 'pending'
             })
-                .populate('seller_id', 'name email')
+                .populate('seller_id', 'firstName lastName email')
                 .populate('category_id', 'name')
                 .populate('tier_id', 'name')
                 .sort({ createdAt: -1 })
@@ -307,7 +351,7 @@ export const Query = {
                 requests.push({
                     id: req._id.toString(),
                     sellerId: req.seller_id?._id?.toString() || '',
-                    sellerName: req.seller_id?.name || 'Unknown',
+                    sellerName: req.seller_id ? `${req.seller_id.firstName || ''} ${req.seller_id.lastName || ''}`.trim() || 'Unknown' : 'Unknown',
                     sellerEmail: req.seller_id?.email || null,
                     categoryId: req.category_id?._id?.toString() || '',
                     categoryName: req.category_id?.name || 'Unknown',
@@ -337,9 +381,9 @@ export const Query = {
             const futureDate = new Date();
             futureDate.setDate(currentDate.getDate() + days);
 
-            // Find durations expiring soon
+            // Find durations expiring soon (approved = active, running = legacy active)
             const expiringDurations = await models.CategoryRequestDuration.find({
-                status: 'running',
+                status: { $in: ['approved', 'running'] },
                 end_date: {
                     $gte: currentDate,
                     $lte: futureDate
@@ -352,7 +396,7 @@ export const Query = {
 
             for (const duration of expiringDurations) {
                 const categoryRequest = await models.CategoryRequest.findById(duration.category_request_id)
-                    .populate('seller_id', 'name email')
+                    .populate('seller_id', 'firstName lastName email')
                     .populate('category_id', 'name')
                     .populate('tier_id', 'name')
                     .lean();
@@ -363,12 +407,15 @@ export const Query = {
                     (new Date(duration.end_date) - currentDate) / (1000 * 60 * 60 * 24)
                 );
 
+                const sellerObj = categoryRequest.seller_id;
+                const sellerFullName = sellerObj ? `${sellerObj.firstName || ''} ${sellerObj.lastName || ''}`.trim() || 'Unknown' : 'Unknown';
+
                 result.push({
                     id: duration._id.toString(),
                     categoryRequestId: categoryRequest._id.toString(),
-                    sellerId: categoryRequest.seller_id?._id?.toString() || '',
-                    sellerName: categoryRequest.seller_id?.name || 'Unknown',
-                    sellerEmail: categoryRequest.seller_id?.email || null,
+                    sellerId: sellerObj?._id?.toString() || '',
+                    sellerName: sellerFullName,
+                    sellerEmail: sellerObj?.email || null,
                     categoryId: categoryRequest.category_id?._id?.toString() || '',
                     categoryName: categoryRequest.category_id?.name || 'Unknown',
                     tierId: categoryRequest.tier_id?._id?.toString() || '',
@@ -376,7 +423,12 @@ export const Query = {
                     slot: duration.slot,
                     startDate: duration.start_date ? new Date(duration.start_date).toISOString() : '',
                     endDate: duration.end_date ? new Date(duration.end_date).toISOString() : '',
-                    remainingDays
+                    remainingDays,
+                    quartersCovered: duration.quarters_covered || [],
+                    totalPrice: duration.total_price || 0,
+                    couponCode: duration.coupon_code || null,
+                    couponDiscountAmount: duration.coupon_discount_amount || 0,
+                    finalPrice: getEffectivePrice(duration)
                 });
             }
 
@@ -400,14 +452,20 @@ export const Query = {
                 if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
             }
 
-            // Get all requests
+            // Get all approved/running requests (CategoryRequest enum has no 'completed')
             const categoryRequests = await models.CategoryRequest.find({
-                status: { $in: ['approved', 'running', 'completed'] },
+                status: { $in: ['approved', 'running'] },
                 ...dateFilter
             })
-                .populate('seller_id', 'name email')
-                .populate('tier_id')
+                .populate('seller_id', 'firstName lastName email')
                 .lean();
+
+            // Get all durations for these requests (to get actual spending and completed counts)
+            const allRequestIds = categoryRequests.map(cr => cr._id);
+            const allDurations = await models.CategoryRequestDuration.find({
+                category_request_id: { $in: allRequestIds },
+                status: { $in: ['approved', 'running', 'completed'] }
+            }).lean();
 
             // Group by seller
             const sellerMap = {};
@@ -417,43 +475,34 @@ export const Query = {
                 if (!sellerId) continue;
 
                 if (!sellerMap[sellerId]) {
+                    const sellerObj = request.seller_id;
                     sellerMap[sellerId] = {
                         sellerId,
-                        sellerName: request.seller_id?.name || 'Unknown',
-                        sellerEmail: request.seller_id?.email || null,
+                        sellerName: sellerObj ? `${sellerObj.firstName || ''} ${sellerObj.lastName || ''}`.trim() || 'Unknown' : 'Unknown',
+                        sellerEmail: sellerObj?.email || null,
                         totalSpent: 0,
                         adCount: 0,
                         activeAdsCount: 0,
-                        completedAdsCount: 0
+                        completedAdsCount: 0,
+                        totalCouponDiscount: 0
                     };
                 }
 
-                // Count ads
-                const mediaCount = await models.CategoryRequestMedia.countDocuments({
-                    category_request_id: request._id
-                });
+                // Get durations for this request
+                const requestDurations = allDurations.filter(
+                    d => d.category_request_id.toString() === request._id.toString()
+                );
 
-                sellerMap[sellerId].adCount += mediaCount;
+                for (const dur of requestDurations) {
+                    sellerMap[sellerId].adCount++;
+                    sellerMap[sellerId].totalSpent += getEffectivePrice(dur);
+                    sellerMap[sellerId].totalCouponDiscount += dur.coupon_discount_amount || 0;
 
-                if (request.status === 'running' || request.status === 'approved') {
-                    sellerMap[sellerId].activeAdsCount += mediaCount;
-                } else if (request.status === 'completed') {
-                    sellerMap[sellerId].completedAdsCount += mediaCount;
-                }
-
-                // Calculate spending
-                const tierId = request.tier_id?._id?.toString();
-                if (tierId) {
-                    const adCategories = await models.AdCategory.find({
-                        categoryMasterId: tierId,
-                        is_active: true
-                    }).lean();
-
-                    const avgPrice = adCategories.length > 0
-                        ? adCategories.reduce((sum, ac) => sum + ac.price, 0) / adCategories.length
-                        : 0;
-
-                    sellerMap[sellerId].totalSpent += avgPrice * mediaCount;
+                    if (dur.status === 'approved' || dur.status === 'running') {
+                        sellerMap[sellerId].activeAdsCount++;
+                    } else if (dur.status === 'completed') {
+                        sellerMap[sellerId].completedAdsCount++;
+                    }
                 }
             }
 
@@ -471,7 +520,7 @@ export const Query = {
     /**
      * Get seller's currently active ads
      */
-    getMyActiveAds: authenticate(['seller'])(async (_, __, { models, req }) => {
+    getMyActiveAds: authenticate(['seller', 'adManager'])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error('Authorization header missing');
@@ -525,6 +574,11 @@ export const Query = {
                         endDate: duration.end_date ? new Date(duration.end_date).toISOString() : '',
                         remainingDays: remainingDays > 0 ? remainingDays : 0,
                         durationDays: duration.duration_days || 0,
+                        quartersCovered: duration.quarters_covered || [],
+                        totalPrice: duration.total_price || 0,
+                        couponCode: duration.coupon_code || null,
+                        couponDiscountAmount: duration.coupon_discount_amount || 0,
+                        finalPrice: getEffectivePrice(duration),
                         media: media ? {
                             slot: media.slot,
                             mobileImageUrl: media.mobile_image_url,
@@ -545,7 +599,7 @@ export const Query = {
     /**
      * Get seller's past ads
      */
-    getMyPastAds: authenticate(['seller'])(async (_, __, { models, req }) => {
+    getMyPastAds: authenticate(['seller', 'adManager'])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error('Authorization header missing');
@@ -589,7 +643,12 @@ export const Query = {
                         startDate: duration.start_date ? new Date(duration.start_date).toISOString() : null,
                         endDate: duration.end_date ? new Date(duration.end_date).toISOString() : null,
                         durationDays: duration.duration_days || 0,
-                        completedDate: duration.updatedAt ? new Date(duration.updatedAt).toISOString() : null
+                        completedDate: duration.updatedAt ? new Date(duration.updatedAt).toISOString() : null,
+                        quartersCovered: duration.quarters_covered || [],
+                        totalPrice: duration.total_price || 0,
+                        couponCode: duration.coupon_code || null,
+                        couponDiscountAmount: duration.coupon_discount_amount || 0,
+                        finalPrice: getEffectivePrice(duration)
                     });
                 }
             }
@@ -604,7 +663,7 @@ export const Query = {
     /**
      * Get validity info for seller's active ads
      */
-    getMyAdValidity: authenticate(['seller'])(async (_, __, { models, req }) => {
+    getMyAdValidity: authenticate(['seller', 'adManager'])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error('Authorization header missing');
@@ -646,7 +705,8 @@ export const Query = {
                         endDate: duration.end_date ? new Date(duration.end_date).toISOString() : '',
                         remainingDays: remainingDays > 0 ? remainingDays : 0,
                         status: duration.status,
-                        isExpiringSoon
+                        isExpiringSoon,
+                        quartersCovered: duration.quarters_covered || []
                     });
                 }
             }

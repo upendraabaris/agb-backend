@@ -40,6 +40,11 @@ export const CategoryRequestSchema = gql`
     quarters_covered: [String]
     pricing_breakdown: [PricingBreakdown]
     total_price: Float
+    coupon_code: String
+    coupon_discount_type: String
+    coupon_discount_value: Float
+    coupon_discount_amount: Float
+    final_price: Float
     createdAt: String
     updatedAt: String
   }
@@ -74,6 +79,11 @@ export const CategoryRequestSchema = gql`
     quarters_covered: [String]
     pricing_breakdown: [PricingBreakdown]
     total_price: Float
+    coupon_code: String
+    coupon_discount_type: String
+    coupon_discount_value: Float
+    coupon_discount_amount: Float
+    final_price: Float
   }
 
   type SellerAdInfo {
@@ -218,6 +228,7 @@ export const CategoryRequestSchema = gql`
     start_preference: String       # "today" | "select_quarter"
     start_quarter: String          # ISO date of quarter start, e.g. "2026-04-01"
     medias: [CategoryRequestMediaInput!]!
+    coupon_code: String            # optional coupon code applied by seller
   }
 
   input ApproveAdRequestInput {

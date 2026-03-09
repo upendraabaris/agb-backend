@@ -6,6 +6,21 @@ import { parse } from "querystring";
 import StoreFeature from "../models/StoreFeature.js";
 import WalletTransaction from "../models/WalletTransaction.js";
 import SellerWallet from "../models/SellerWallet.js";
+import User from "../models/User.js";
+
+// Determine the wallet redirect base path based on the user's role.
+// Ad Managers are redirected to /adManager/wallet, everyone else to /seller/wallet.
+async function getWalletPath(sellerId) {
+    try {
+        const user = await User.findById(sellerId).select("role").lean();
+        if (user && user.role && user.role.includes("adManager")) {
+            return "/adManager/wallet";
+        }
+    } catch (e) {
+        console.error("[getWalletPath] error looking up user role:", e);
+    }
+    return "/seller/wallet";
+}
 
 export async function walletRes(request, response) {
     let ccavEncResponse = "";
@@ -56,6 +71,9 @@ export async function walletRes(request, response) {
                     return resolve();
                 }
 
+                // Determine redirect path based on user role (adManager → /adManager/wallet, else /seller/wallet)
+                const walletPath = await getWalletPath(transaction.seller_id);
+
                 if (jsonResponse.order_status === "Success") {
                     // Mark transaction as success and update CCAvenue correlation fields
                     transaction.status = "success";
@@ -73,7 +91,7 @@ export async function walletRes(request, response) {
                     console.log(
                         `[walletRes] Wallet credited: seller=${transaction.seller_id}, amount=${transaction.amount}`
                     );
-                    response.redirect(302, process.env.WALLET_SUCCESS_URL || "/seller/wallet?status=success");
+                    response.redirect(302, process.env.WALLET_SUCCESS_URL || `${walletPath}?status=success`);
                 } else {
                     // Payment failed or cancelled
                     transaction.status = "failed";
@@ -84,7 +102,7 @@ export async function walletRes(request, response) {
                     console.log(
                         `[walletRes] Wallet payment failed: seller=${transaction.seller_id}, status=${jsonResponse.order_status}`
                     );
-                    response.redirect(302, process.env.WALLET_FAILURE_URL || "/seller/wallet?status=failed");
+                    response.redirect(302, process.env.WALLET_FAILURE_URL || `${walletPath}?status=failed`);
                 }
 
                 response.end();

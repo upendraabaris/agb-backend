@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 const sellerWalletSchema = new mongoose.Schema(
     {
+        // seller_id stores User._id (used by both sellers and ad managers)
         seller_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Seller",

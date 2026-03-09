@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 
 const CategoryRequestSchema = new mongoose.Schema({
+  // seller_id stores User._id (used by both sellers and ad managers)
   seller_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   category_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
   tier_id: { type: mongoose.Schema.Types.ObjectId, ref: 'AdTierMaster', required: true },

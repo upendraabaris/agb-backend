@@ -11,5 +11,19 @@ export const CouponCodeType = gql`
     start: String
     end: String
     active: Boolean
+    couponType: String
+    discountType: String
+    maxUses: Int
+    usedCount: Int
+    perUserLimit: Int
+    minOrderAmount: Float
+  }
+
+  type CouponValidationResult {
+    valid: Boolean!
+    message: String!
+    discountAmount: Float
+    finalAmount: Float
+    coupon: CouponCode
   }
 `;

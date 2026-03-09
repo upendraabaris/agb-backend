@@ -147,6 +147,38 @@ export const Mutation = {
       }
     }
   ),
+  addAdManagerRole: authenticate(["masterAdmin", "admin"])(
+    async (_, { userID }, { models }) => {
+      try {
+        const user = await models.User.findById(userID);
+        if (!user) {
+          return { message: "user not found" };
+        }
+        if (!user.role.includes("adManager")) {
+          user.role.push("adManager");
+          await user.save();
+        }
+        return { message: "user is now Ad Manager" };
+      } catch (error) {
+        throw new Error(error);
+      }
+    }
+  ),
+  removeAdManagerRole: authenticate(["masterAdmin", "admin"])(
+    async (_, { userID }, { models }) => {
+      try {
+        const user = await models.User.findById(userID);
+        if (!user) {
+          return { message: "user not found" };
+        }
+        user.role = user.role.filter((item) => item !== "adManager");
+        await user.save();
+        return { message: "user is no longer Ad Manager" };
+      } catch (error) {
+        throw new Error(error);
+      }
+    }
+  ),
 };
 
 export const StoreFeature = {};
