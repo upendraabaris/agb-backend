@@ -5,6 +5,15 @@ import AdPricingConfig from '../../models/AdPricingConfig.js';
 import SellerWallet from '../../models/SellerWallet.js';
 import WalletTransaction from '../../models/WalletTransaction.js';
 
+// Build full image URL from relative path (e.g. "uploads/img.jpg" → "http://localhost:4000/uploads/img.jpg")
+const getFullImageUrl = (relativePath) => {
+    if (!relativePath) return '';
+    if (relativePath.startsWith('http') || relativePath.startsWith('data:')) return relativePath;
+    const base = (process.env.BASE_URL || 'http://localhost:4000/uploads/').replace(/\/$/, '');
+    const cleanPath = relativePath.replace(/^uploads\//, '');
+    return `${base}/${cleanPath}`;
+};
+
 // ─── HELPER: Get next 4 quarters starting from current quarter ──────────────
 const getNext4Quarters = () => {
     const now = new Date();
@@ -174,9 +183,11 @@ export const Query = {
                             id: m._id?.toString(),
                             slot: m.slot,
                             media_type: m.media_type,
-                            mobile_image_url: m.mobile_image_url,
-                            desktop_image_url: m.desktop_image_url,
-                            redirect_url: m.redirect_url || m.mobile_redirect_url || m.desktop_redirect_url
+                            mobile_image_url: getFullImageUrl(m.mobile_image_url),
+                            desktop_image_url: getFullImageUrl(m.desktop_image_url),
+                            redirect_url: m.redirect_url || m.mobile_redirect_url || m.desktop_redirect_url,
+                            mobile_redirect_url: m.mobile_redirect_url || '',
+                            desktop_redirect_url: m.desktop_redirect_url || ''
                         })),
                         durations: (durationsMap[reqId] || []).map(d => ({
                             id: d._id?.toString(),
@@ -270,9 +281,11 @@ export const Query = {
                             id: m._id?.toString(),
                             slot: m.slot,
                             media_type: m.media_type,
-                            mobile_image_url: m.mobile_image_url,
-                            desktop_image_url: m.desktop_image_url,
-                            redirect_url: m.redirect_url || m.mobile_redirect_url || m.desktop_redirect_url
+                            mobile_image_url: getFullImageUrl(m.mobile_image_url),
+                            desktop_image_url: getFullImageUrl(m.desktop_image_url),
+                            redirect_url: m.redirect_url || m.mobile_redirect_url || m.desktop_redirect_url,
+                            mobile_redirect_url: m.mobile_redirect_url || '',
+                            desktop_redirect_url: m.desktop_redirect_url || ''
                         })),
                         durations: (durationsMap[reqId] || []).map(d => ({
                             id: d._id?.toString(),
@@ -523,7 +536,7 @@ export const Query = {
 
             const approvedRequests = await models.ProductAdRequest.find({
                 product_id: finalProductId,
-                status: 'approved'
+                status: { $in: ['approved', 'running'] }
             })
                 .populate('seller_id', 'first_name last_name email')
                 .populate('product_id', 'fullName previewName brand_name thumbnail')
@@ -573,8 +586,8 @@ export const Query = {
                             id: m._id?.toString(),
                             slot: m.slot,
                             media_type: m.media_type,
-                            mobile_image_url: m.mobile_image_url,
-                            desktop_image_url: m.desktop_image_url,
+                            mobile_image_url: getFullImageUrl(m.mobile_image_url),
+                            desktop_image_url: getFullImageUrl(m.desktop_image_url),
                             mobile_redirect_url: m.mobile_redirect_url,
                             desktop_redirect_url: m.desktop_redirect_url
                         })),
@@ -610,7 +623,7 @@ export const Query = {
 // ─── Shared helper ─────────────────────────────────────────────────────────
 async function _getRunningProductAds(models, slotRegex) {
     try {
-        const approvedRequests = await models.ProductAdRequest.find({ status: 'approved' })
+        const approvedRequests = await models.ProductAdRequest.find({ status: { $in: ['approved', 'running'] } })
             .populate('seller_id', 'first_name last_name email')
             .populate('product_id', 'fullName previewName brand_name thumbnail')
             .lean()
@@ -674,8 +687,8 @@ async function _getRunningProductAds(models, slotRegex) {
                         id: m._id?.toString(),
                         slot: m.slot,
                         media_type: m.media_type,
-                        mobile_image_url: m.mobile_image_url,
-                        desktop_image_url: m.desktop_image_url,
+                        mobile_image_url: getFullImageUrl(m.mobile_image_url),
+                        desktop_image_url: getFullImageUrl(m.desktop_image_url),
                         mobile_redirect_url: m.mobile_redirect_url,
                         desktop_redirect_url: m.desktop_redirect_url
                     })),
