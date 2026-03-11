@@ -97,7 +97,7 @@ export const Query = {
                     bannerCount,
                     stampCount,
                     couponDiscount: tierCouponDiscount,
-                    netRevenue: tierNetRevenue
+                    netRevenue: tierNetRevenue,
                 });
             }
 
@@ -428,7 +428,7 @@ export const Query = {
                     totalPrice: duration.total_price || 0,
                     couponCode: duration.coupon_code || null,
                     couponDiscountAmount: duration.coupon_discount_amount || 0,
-                    finalPrice: getEffectivePrice(duration)
+                    finalPrice: getEffectivePrice(duration),
                 });
             }
 
@@ -648,7 +648,7 @@ export const Query = {
                         totalPrice: duration.total_price || 0,
                         couponCode: duration.coupon_code || null,
                         couponDiscountAmount: duration.coupon_discount_amount || 0,
-                        finalPrice: getEffectivePrice(duration)
+                        finalPrice: getEffectivePrice(duration),
                     });
                 }
             }
