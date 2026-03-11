@@ -35,6 +35,11 @@ const walletTransactionSchema = new mongoose.Schema(
         ccav_payment_mode: {
             type: String,
         },
+        // Reference to the WalletInvoice generated on successful top-up
+        invoice_id: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "WalletInvoice",
+        },
         status: {
             type: String,
             enum: ["pending", "success", "failed"],
