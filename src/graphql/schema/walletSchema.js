@@ -35,6 +35,19 @@ export const WalletSchema = gql`
     companyPan: String
     companyGstin: String
     companyWebsite: String
+    # GST breakdown
+    baseAmount: Float
+    gstRate: Float
+    gstType: String
+    cgstRate: Float
+    cgstAmount: Float
+    sgstRate: Float
+    sgstAmount: Float
+    igstRate: Float
+    igstAmount: Float
+    totalAmount: Float
+    buyerState: String
+    companyState: String
     createdAt: String
   }
 
@@ -48,7 +61,11 @@ export const WalletSchema = gql`
   type InitiateWalletPaymentResponse {
     success: Boolean!
     transactionId: ID!
-    amount: Float!
+    amount: Float!       # totalCharged (base + GST) — sent to PayU
+    baseAmount: Float!   # wallet credit amount (before GST)
+    gstAmount: Float!    # GST component
+    totalAmount: Float!  # same as amount; alias for clarity
+    gstType: String!     # 'cgst_sgst' or 'igst'
     hash: String!
     key: String!
     productinfo: String!

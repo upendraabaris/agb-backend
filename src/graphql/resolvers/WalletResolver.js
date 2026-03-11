@@ -3,6 +3,32 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import authenticate from "../../middlewares/auth.js";
 import { createWalletInvoice as _createInvoiceForTransaction, generateInvoiceNumber as _generateInvoiceNumber } from "../../services/walletInvoiceService.js";
+import Seller from "../../models/Seller.js";
+import StoreFeature from "../../models/StoreFeature.js";
+
+// ─── GST helper ──────────────────────────────────────────────────────────────
+/**
+ * Computes 18% GST breakdown for a wallet top-up.
+ * - Same state (buyer == company) → CGST 9% + SGST 9%
+ * - Different state              → IGST 18%
+ */
+function computeGst(baseAmount, buyerState, companyState) {
+    const gstRate = 18;
+    const gstAmount = Math.round(baseAmount * 0.18);
+    const totalCharged = baseAmount + gstAmount;
+    const sameState = buyerState && companyState &&
+        buyerState.trim().toLowerCase() === companyState.trim().toLowerCase();
+    const gstType = sameState ? 'cgst_sgst' : 'igst';
+
+    const cgstRate   = gstType === 'cgst_sgst' ? 9 : 0;
+    const sgstRate   = gstType === 'cgst_sgst' ? 9 : 0;
+    const igstRate   = gstType === 'igst'       ? 18 : 0;
+    const cgstAmount = gstType === 'cgst_sgst' ? Math.round(baseAmount * 0.09) : 0;
+    const sgstAmount = gstType === 'cgst_sgst' ? Math.round(baseAmount * 0.09) : 0;
+    const igstAmount = gstType === 'igst'       ? gstAmount : 0;
+
+    return { gstRate, gstAmount, totalCharged, gstType, cgstRate, cgstAmount, sgstRate, sgstAmount, igstRate, igstAmount };
+}
 
 // Generate PayU forward hash:
 // sha512(key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||||salt)
@@ -105,21 +131,36 @@ export const Query = {
 
                 if (!invoice) return null;
 
-                return {
-                    id: invoice._id.toString(),
-                    invoiceNumber: invoice.invoiceNumber,
-                    seller_id: invoice.seller_id.toString(),
-                    transaction_id: invoice.transaction_id.toString(),
-                    amount: invoice.amount,
-                    gatewayTransactionId: invoice.gatewayTransactionId || null,
-                    paymentMode: invoice.paymentMode || null,
-                    paymentGateway: invoice.paymentGateway,
-                    description: invoice.description || null,
-                    buyerName: invoice.buyerName || null,
-                    buyerEmail: invoice.buyerEmail || null,
-                    buyerPhone: invoice.buyerPhone || null,
-                    createdAt: invoice.createdAt ? new Date(invoice.createdAt).toISOString() : null,
-                };
+                // Helper to map a lean invoice document to GraphQL response shape
+                const mapInvoice = (inv) => ({
+                    id: inv._id.toString(),
+                    invoiceNumber: inv.invoiceNumber,
+                    seller_id: inv.seller_id.toString(),
+                    transaction_id: inv.transaction_id.toString(),
+                    amount: inv.amount,
+                    gatewayTransactionId: inv.gatewayTransactionId || null,
+                    paymentMode: inv.paymentMode || null,
+                    paymentGateway: inv.paymentGateway,
+                    description: inv.description || null,
+                    buyerName: inv.buyerName || null,
+                    buyerEmail: inv.buyerEmail || null,
+                    buyerPhone: inv.buyerPhone || null,
+                    baseAmount:   inv.baseAmount   ?? null,
+                    gstRate:      inv.gstRate      ?? null,
+                    gstType:      inv.gstType      ?? null,
+                    cgstRate:     inv.cgstRate     ?? null,
+                    cgstAmount:   inv.cgstAmount   ?? null,
+                    sgstRate:     inv.sgstRate     ?? null,
+                    sgstAmount:   inv.sgstAmount   ?? null,
+                    igstRate:     inv.igstRate     ?? null,
+                    igstAmount:   inv.igstAmount   ?? null,
+                    totalAmount:  inv.totalAmount  ?? null,
+                    buyerState:   inv.buyerState   ?? null,
+                    companyState: inv.companyState ?? null,
+                    createdAt: inv.createdAt ? new Date(inv.createdAt).toISOString() : null,
+                });
+
+                return mapInvoice(invoice);
             } catch (err) {
                 console.error("[getWalletInvoice] error:", err);
                 throw err;
@@ -155,6 +196,18 @@ export const Query = {
                     buyerName: invoice.buyerName || null,
                     buyerEmail: invoice.buyerEmail || null,
                     buyerPhone: invoice.buyerPhone || null,
+                    baseAmount:   invoice.baseAmount   ?? null,
+                    gstRate:      invoice.gstRate      ?? null,
+                    gstType:      invoice.gstType      ?? null,
+                    cgstRate:     invoice.cgstRate     ?? null,
+                    cgstAmount:   invoice.cgstAmount   ?? null,
+                    sgstRate:     invoice.sgstRate     ?? null,
+                    sgstAmount:   invoice.sgstAmount   ?? null,
+                    igstRate:     invoice.igstRate     ?? null,
+                    igstAmount:   invoice.igstAmount   ?? null,
+                    totalAmount:  invoice.totalAmount  ?? null,
+                    buyerState:   invoice.buyerState   ?? null,
+                    companyState: invoice.companyState ?? null,
                     createdAt: invoice.createdAt ? new Date(invoice.createdAt).toISOString() : null,
                 }));
             } catch (err) {
@@ -182,8 +235,12 @@ export const Mutation = {
                     throw new Error("Amount must be greater than zero");
                 }
 
-                // Fetch user info for PayU form fields (firstname, email, phone)
-                const user = await models.User.findById(sellerId).lean();
+                // Fetch user + seller profile + store config in parallel
+                const [user, sellerDoc, storeFeature] = await Promise.all([
+                    models.User.findById(sellerId).lean(),
+                    Seller.findOne({ user: sellerId }).lean(),
+                    StoreFeature.findOne({}).lean(),
+                ]);
                 if (!user) throw new Error("User not found");
 
                 const firstname = user.firstName || "Seller";
@@ -192,6 +249,12 @@ export const Mutation = {
                 const rawPhone = user.mobileNo || "";
                 const phone = rawPhone.replace(/\D/g, "").slice(-10);
 
+                // ── GST computation ──────────────────────────────────────────
+                const buyerState   = sellerDoc?.state || "";
+                const companyState = storeFeature?.storeBusinessState || "";
+                const gst = computeGst(amount, buyerState, companyState);
+                const totalCharged = gst.totalCharged; // what gets sent to PayU
+
                 // Read PayU credentials at request time (not module load) to pick up .env changes
                 const payuKey = process.env.PAYU_WALLET_KEY;
                 const payuSalt = process.env.PAYU_WALLET_SALT;
@@ -199,23 +262,29 @@ export const Mutation = {
                     throw new Error("PayU credentials not configured. Add PAYU_WALLET_KEY and PAYU_WALLET_SALT to backend .env");
                 }
 
-                // Create a pending transaction — its _id is used as PayU txnid
+                // Create a pending transaction (amount = base wallet credit, not totalCharged)
                 const transaction = await models.WalletTransaction.create({
                     seller_id: sellerId,
                     type: "credit",
-                    amount,
+                    amount,            // wallet will be credited this much on success
                     source: "payu",
                     description: "Wallet top-up via PayU",
                     status: "pending",
+                    // GST fields
+                    gstType:      gst.gstType,
+                    gstAmount:    gst.gstAmount,
+                    totalCharged: gst.totalCharged,
+                    buyerState,
+                    companyState,
                 });
 
                 const txnid = transaction._id.toString();
                 const productinfo = "Wallet Top-up";
 
-                // Generate PayU forward hash (must be done server-side to keep salt secret)
+                // Hash MUST use totalCharged (amount sent to PayU), not base amount
                 const hash = generatePayUHash({
                     txnid,
-                    amount: amount.toFixed(2),
+                    amount: totalCharged.toFixed(2),
                     productinfo,
                     firstname,
                     email,
@@ -226,7 +295,11 @@ export const Mutation = {
                 return {
                     success: true,
                     transactionId: txnid,
-                    amount,
+                    amount: totalCharged,   // amount posted to PayU form
+                    baseAmount: amount,
+                    gstAmount: gst.gstAmount,
+                    totalAmount: totalCharged,
+                    gstType: gst.gstType,
                     hash,
                     key: payuKey,
                     productinfo,
@@ -297,6 +370,18 @@ export const Mutation = {
                     companyPan: storeFeature?.storeBusinessPanNo || null,
                     companyGstin: storeFeature?.storeBusinessGstin || null,
                     companyWebsite: storeFeature?.storeName || null,
+                    baseAmount:   inv.baseAmount   ?? null,
+                    gstRate:      inv.gstRate      ?? null,
+                    gstType:      inv.gstType      ?? null,
+                    cgstRate:     inv.cgstRate     ?? null,
+                    cgstAmount:   inv.cgstAmount   ?? null,
+                    sgstRate:     inv.sgstRate     ?? null,
+                    sgstAmount:   inv.sgstAmount   ?? null,
+                    igstRate:     inv.igstRate     ?? null,
+                    igstAmount:   inv.igstAmount   ?? null,
+                    totalAmount:  inv.totalAmount  ?? null,
+                    buyerState:   inv.buyerState   ?? null,
+                    companyState: inv.companyState ?? null,
                     createdAt: inv.createdAt ? new Date(inv.createdAt).toISOString() : null,
                 });
 
@@ -319,6 +404,20 @@ export const Mutation = {
                     user,
                     paymentMode: transaction.ccav_payment_mode || "",
                     gatewayTransactionId: transaction.ccav_tracking_id || "",
+                    gstData: transaction.gstType ? {
+                        baseAmount:   transaction.amount,
+                        gstRate:      18,
+                        gstType:      transaction.gstType,
+                        cgstRate:     transaction.gstType === 'cgst_sgst' ? 9 : 0,
+                        cgstAmount:   transaction.gstType === 'cgst_sgst' ? Math.round(transaction.amount * 0.09) : 0,
+                        sgstRate:     transaction.gstType === 'cgst_sgst' ? 9 : 0,
+                        sgstAmount:   transaction.gstType === 'cgst_sgst' ? Math.round(transaction.amount * 0.09) : 0,
+                        igstRate:     transaction.gstType === 'igst' ? 18 : 0,
+                        igstAmount:   transaction.gstType === 'igst' ? Math.round(transaction.amount * 0.18) : 0,
+                        totalAmount:  transaction.totalCharged || (transaction.amount + Math.round(transaction.amount * 0.18)),
+                        buyerState:   transaction.buyerState   || null,
+                        companyState: transaction.companyState || null,
+                    } : null,
                 });
                 if (!invoice) throw new Error("Failed to generate invoice. Please try again.");
 

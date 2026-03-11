@@ -29,7 +29,7 @@ export async function generateInvoiceNumber() {
   const billFormat = storeFeature?.sellerBillFormate || "B";
 
   // Prefix is FY-scoped → sequence naturally resets when the FY changes
-  const prefix = `SE/AD/${billFormat}/${fy}/`;
+  const prefix = `WINV/${billFormat}/${fy}/`;
 
   const latestInvoice = await WalletInvoice.findOne(
     { invoiceNumber: { $regex: `^${prefix}` } },
@@ -56,12 +56,28 @@ export async function generateInvoiceNumber() {
  * @param {object}  opts.user                             - Lean User document
  * @param {string}  [opts.paymentMode]
  * @param {string}  [opts.gatewayTransactionId]
+ * @param {object}  [opts.gstData]  - GST breakdown (optional, for new invoices)
  * @returns {Promise<import("mongoose").Document|null>}
  */
-export async function createWalletInvoice({ transaction, user, paymentMode = "", gatewayTransactionId = "" }) {
+export async function createWalletInvoice({ transaction, user, paymentMode = "", gatewayTransactionId = "", gstData = null }) {
   try {
     const invoiceNumber = await generateInvoiceNumber();
     const rawPhone = (user.mobileNo || "").replace(/\D/g, "").slice(-10);
+
+    const gstFields = gstData ? {
+      baseAmount:   gstData.baseAmount,
+      gstRate:      gstData.gstRate,
+      gstType:      gstData.gstType,
+      cgstRate:     gstData.cgstRate,
+      cgstAmount:   gstData.cgstAmount,
+      sgstRate:     gstData.sgstRate,
+      sgstAmount:   gstData.sgstAmount,
+      igstRate:     gstData.igstRate,
+      igstAmount:   gstData.igstAmount,
+      totalAmount:  gstData.totalAmount,
+      buyerState:   gstData.buyerState,
+      companyState: gstData.companyState,
+    } : {};
 
     const invoice = await WalletInvoice.create({
       invoiceNumber,
@@ -75,6 +91,7 @@ export async function createWalletInvoice({ transaction, user, paymentMode = "",
       buyerName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Seller",
       buyerEmail: user.email || "",
       buyerPhone: rawPhone,
+      ...gstFields,
     });
 
     // Back-link the invoice on the transaction so it can be resolved directly
