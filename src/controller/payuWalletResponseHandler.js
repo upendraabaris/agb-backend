@@ -4,6 +4,7 @@ import crypto from "crypto";
 import WalletTransaction from "../models/WalletTransaction.js";
 import SellerWallet from "../models/SellerWallet.js";
 import User from "../models/User.js";
+import { createWalletInvoice } from "../services/walletInvoiceService.js";
 
 // Determine the wallet redirect base path based on the user's role.
 // Ad Managers are redirected to /adManager/wallet, everyone else to /seller/wallet.
@@ -81,6 +82,20 @@ export async function payuWalletResponse(request, response) {
             transaction.status = "success";
             transaction.ccav_tracking_id = data.payuMoneyId || data.bank_ref_num || "";
             transaction.ccav_payment_mode = data.mode || "";
+
+            // Generate invoice before saving the transaction so the invoice_id is persisted together
+            const user = await User.findById(transaction.seller_id).lean();
+            if (user) {
+                await createWalletInvoice({
+                    transaction,
+                    user,
+                    paymentMode: data.mode || "",
+                    gatewayTransactionId: data.payuMoneyId || data.bank_ref_num || "",
+                });
+            } else {
+                console.warn("[payuWalletResponse] User not found for invoice generation, seller_id:", transaction.seller_id);
+            }
+
             await transaction.save();
 
             // Atomically credit wallet
