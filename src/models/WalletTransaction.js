@@ -35,6 +35,24 @@ const walletTransactionSchema = new mongoose.Schema(
         ccav_payment_mode: {
             type: String,
         },
+        // GST fields (computed at payment initiation time)
+        gstType: {
+            type: String,
+            enum: ['cgst_sgst', 'igst'],
+        },
+        gstAmount: {
+            type: Number,
+            default: 0,
+        },
+        totalCharged: {
+            type: Number, // base amount + GST — what was actually charged to the gateway
+        },
+        buyerState: {
+            type: String, // snapshot of seller's state at time of payment
+        },
+        companyState: {
+            type: String, // snapshot of StoreFeature.storeBusinessState at time of payment
+        },
         // Reference to the WalletInvoice generated on successful top-up
         invoice_id: {
             type: mongoose.Schema.Types.ObjectId,

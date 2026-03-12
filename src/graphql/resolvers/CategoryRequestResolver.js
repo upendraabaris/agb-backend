@@ -600,7 +600,7 @@ export const Query = {
         category_id: finalCategoryId,
         status: 'approved'
       })
-        .populate('seller_id', 'first_name last_name email')
+        .populate('seller_id', 'firstName lastName email')
         .populate('category_id', 'name')
         .lean()
         .sort({ createdAt: -1 });
@@ -646,7 +646,7 @@ export const Query = {
         .map(req => {
           const reqId = req._id.toString();
           const sellerName = req.seller_id
-            ? `${req.seller_id.first_name || ''} ${req.seller_id.last_name || ''}`.trim()
+            ? `${req.seller_id.firstName || ''} ${req.seller_id.lastName || ''}`.trim()
             : 'Unknown Seller';
 
           // Check if ad is still running (within start and end dates)
@@ -718,7 +718,7 @@ export const Query = {
 
       // Fetch requests with seller and category details
       const requests = await models.CategoryRequest.find(query)
-        .populate('seller_id', 'first_name last_name email')
+        .populate('seller_id', 'firstName lastName email')
         .populate('category_id', 'name')
         .populate('tier_id', '_id')
         .lean()
@@ -759,7 +759,7 @@ export const Query = {
         .map(req => {
           const reqId = req._id.toString();
           const sellerName = req.seller_id
-            ? `${req.seller_id.first_name || ''} ${req.seller_id.last_name || ''}`.trim()
+            ? `${req.seller_id.firstName || ''} ${req.seller_id.lastName || ''}`.trim()
             : 'Unknown Seller';
 
           // Get tier_id from populated object
@@ -834,7 +834,7 @@ export const Query = {
       const approvedRequests = await models.CategoryRequest.find({
         status: 'approved'
       })
-        .populate('seller_id', 'first_name last_name email')
+        .populate('seller_id', 'firstName lastName email')
         .populate('category_id', 'name')
         .lean()
         .sort({ createdAt: -1 });
@@ -880,7 +880,7 @@ export const Query = {
           if (!medias || medias.length === 0) return null;
 
           const sellerName = req.seller_id
-            ? `${req.seller_id.first_name || ''} ${req.seller_id.last_name || ''}`.trim()
+            ? `${req.seller_id.firstName || ''} ${req.seller_id.lastName || ''}`.trim()
             : 'Unknown Seller';
 
           // Check if ad is still running (within start and end dates)
@@ -937,7 +937,7 @@ export const Query = {
       const approvedRequests = await models.CategoryRequest.find({
         status: 'approved'
       })
-        .populate('seller_id', 'first_name last_name email')
+        .populate('seller_id', 'firstName lastName email')
         .populate('category_id', 'name')
         .lean()
         .sort({ createdAt: -1 });
@@ -983,7 +983,7 @@ export const Query = {
           if (!medias || medias.length === 0) return null;
 
           const sellerName = req.seller_id
-            ? `${req.seller_id.first_name || ''} ${req.seller_id.last_name || ''}`.trim()
+            ? `${req.seller_id.firstName || ''} ${req.seller_id.lastName || ''}`.trim()
             : 'Unknown Seller';
 
           // Check if ad is still running (within start and end dates)

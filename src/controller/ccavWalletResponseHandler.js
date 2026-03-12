@@ -7,6 +7,7 @@ import StoreFeature from "../models/StoreFeature.js";
 import WalletTransaction from "../models/WalletTransaction.js";
 import SellerWallet from "../models/SellerWallet.js";
 import User from "../models/User.js";
+import { createWalletInvoice } from "../services/walletInvoiceService.js";
 
 // Determine the wallet redirect base path based on the user's role.
 // Ad Managers are redirected to /adManager/wallet, everyone else to /seller/wallet.
@@ -79,6 +80,34 @@ export async function walletRes(request, response) {
                     transaction.status = "success";
                     transaction.ccav_tracking_id = jsonResponse.tracking_id || "";
                     transaction.ccav_payment_mode = jsonResponse.payment_mode || "";
+
+                    // Generate invoice with GST data from the pending transaction
+                    const user = await User.findById(transaction.seller_id).lean();
+                    if (user) {
+                        await createWalletInvoice({
+                            transaction,
+                            user,
+                            paymentMode: jsonResponse.payment_mode || "",
+                            gatewayTransactionId: jsonResponse.tracking_id || "",
+                            gstData: transaction.gstType ? {
+                                baseAmount:   transaction.amount,
+                                gstRate:      18,
+                                gstType:      transaction.gstType,
+                                cgstRate:     transaction.gstType === 'cgst_sgst' ? 9 : 0,
+                                cgstAmount:   transaction.gstType === 'cgst_sgst' ? Math.round(transaction.amount * 0.09) : 0,
+                                sgstRate:     transaction.gstType === 'cgst_sgst' ? 9 : 0,
+                                sgstAmount:   transaction.gstType === 'cgst_sgst' ? Math.round(transaction.amount * 0.09) : 0,
+                                igstRate:     transaction.gstType === 'igst' ? 18 : 0,
+                                igstAmount:   transaction.gstType === 'igst' ? Math.round(transaction.amount * 0.18) : 0,
+                                totalAmount:  transaction.totalCharged || (transaction.amount + Math.round(transaction.amount * 0.18)),
+                                buyerState:   transaction.buyerState   || null,
+                                companyState: transaction.companyState || null,
+                            } : null,
+                        });
+                    } else {
+                        console.warn("[walletRes] User not found for invoice generation, seller_id:", transaction.seller_id);
+                    }
+
                     await transaction.save();
 
                     // Atomically increment the seller's wallet balance

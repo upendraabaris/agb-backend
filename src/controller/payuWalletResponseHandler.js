@@ -91,6 +91,20 @@ export async function payuWalletResponse(request, response) {
                     user,
                     paymentMode: data.mode || "",
                     gatewayTransactionId: data.payuMoneyId || data.bank_ref_num || "",
+                    gstData: transaction.gstType ? {
+                        baseAmount:   transaction.amount,
+                        gstRate:      18,
+                        gstType:      transaction.gstType,
+                        cgstRate:     transaction.gstType === 'cgst_sgst' ? 9 : 0,
+                        cgstAmount:   transaction.gstType === 'cgst_sgst' ? Math.round(transaction.amount * 0.09) : 0,
+                        sgstRate:     transaction.gstType === 'cgst_sgst' ? 9 : 0,
+                        sgstAmount:   transaction.gstType === 'cgst_sgst' ? Math.round(transaction.amount * 0.09) : 0,
+                        igstRate:     transaction.gstType === 'igst' ? 18 : 0,
+                        igstAmount:   transaction.gstType === 'igst' ? Math.round(transaction.amount * 0.18) : 0,
+                        totalAmount:  transaction.totalCharged || (transaction.amount + Math.round(transaction.amount * 0.18)),
+                        buyerState:   transaction.buyerState   || null,
+                        companyState: transaction.companyState || null,
+                    } : null,
                 });
             } else {
                 console.warn("[payuWalletResponse] User not found for invoice generation, seller_id:", transaction.seller_id);
