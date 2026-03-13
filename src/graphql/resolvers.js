@@ -150,8 +150,7 @@ import { Query as AdPricingConfigQuery } from "./resolvers/AdPricingConfigResolv
 import { Mutation as AdPricingConfigMutation } from "./resolvers/AdPricingConfigResolver.js";
 
 import { Query as DefaultAdQuery } from "./resolvers/DefaultAdResolver.js";
-import { Mutation as DefaultAdMutation } from "./resolvers/DefaultAdResolver.js";
-
+import { Mutation as DefaultAdMutation } from "./resolvers/DefaultAdResolver.js";import { Query as AdSettingsQuery, Mutation as AdSettingsMutation } from './resolvers/AdSettingsResolver.js';
 export const resolvers = {
   Upload: GraphQLUpload,
   Query: {
@@ -196,6 +195,7 @@ export const resolvers = {
     ...DefaultAdQuery,
     ...WalletQuery,
     ...ProductAdRequestQuery,
+    ...AdSettingsQuery,
   },
   Mutation: {
     ...UserMutation,
@@ -238,6 +238,7 @@ export const resolvers = {
     ...DefaultAdMutation,
     ...ProductAdRequestMutation,
     ...WalletMutation,
+    ...AdSettingsMutation,
   },
 
   Subscription: {

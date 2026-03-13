@@ -7,7 +7,7 @@ const CategoryRequestMediaSchema = new mongoose.Schema({
   mobile_image_url: { type: String },
   desktop_image_url: { type: String },
   redirect_url: { type: String },
-  url_type: { type: String, enum: ['internal', 'external'], default: 'external' },
+  url_type: { type: String, enum: ['internal', 'external'], default: 'internal' },
 }, { timestamps: true });
 
 const CategoryRequestMedia = mongoose.model('CategoryRequestMedia', CategoryRequestMediaSchema);

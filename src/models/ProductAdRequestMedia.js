@@ -11,7 +11,8 @@ const ProductAdRequestMediaSchema = new mongoose.Schema({
     mobile_image_url: { type: String },
     mobile_redirect_url: { type: String },
     desktop_image_url: { type: String },
-    desktop_redirect_url: { type: String }
+    desktop_redirect_url: { type: String },
+    url_type: { type: String, enum: ['internal', 'external'], default: 'internal' },
 }, { timestamps: true });
 
 const ProductAdRequestMedia = mongoose.model('ProductAdRequestMedia', ProductAdRequestMediaSchema);

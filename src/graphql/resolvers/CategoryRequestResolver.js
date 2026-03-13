@@ -1145,7 +1145,7 @@ export const Mutation = {
           mobile_image_url: m.mobile_image_url,
           desktop_image_url: m.desktop_image_url,
           redirect_url: m.redirect_url,
-          url_type: m.url_type || 'external'
+          url_type: m.url_type || 'internal'
         }));
 
         const savedMedias = await models.CategoryRequestMedia.insertMany(medias, { session });
@@ -1211,6 +1211,8 @@ export const Mutation = {
             throw new Error(`Pricing not found for slot ${m.slot}`);
           }
           const slotPrice = slotPriceEntry[configKey] || 0;
+          // External URL surcharge (flat fee set by admin in AdPricingConfig)
+          const externalSurcharge = (m.url_type === 'external') ? (pricingConfig.external_url_extra_cost || 0) : 0;
 
           let durStart, durEnd;
           const segments = [];
@@ -1270,8 +1272,8 @@ export const Mutation = {
             durEnd = segments[segments.length - 1].end;
           }
 
-          // Total = full duration price + pro-rata for current quarter (0 for next_quarter mode)
-          const finalPrice = slotPrice + proRataCharge;
+          // Total = full duration price + pro-rata for current quarter (0 for next_quarter mode) + external URL surcharge
+          const finalPrice = slotPrice + proRataCharge + externalSurcharge;
           const totalDays = segments.reduce((sum, s) => sum + s.days, 0);
 
           // Build breakdown with accurate per-segment subtotals

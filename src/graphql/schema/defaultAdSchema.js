@@ -71,14 +71,58 @@ const defaultAdSchema = gql`
     ads: [SlotAd!]!
   }
 
+  # Per-category fallback ad (middle tier between paid and global default)
+  type CategoryDefaultAd {
+    id: ID!
+    category_id: ID!
+    ad_type: String!
+    slot_position: Int!
+    slot_name: String!
+    mobile_image_url: String!
+    desktop_image_url: String!
+    redirect_url: String
+    title: String
+    is_active: Boolean!
+    createdAt: String
+    updatedAt: String
+  }
+
+  input CategoryDefaultAdInput {
+    ad_type: String!
+    slot_position: Int!
+    mobile_image_url: String!
+    desktop_image_url: String!
+    redirect_url: String
+    title: String
+    is_active: Boolean
+  }
+
+  input UpdateCategoryDefaultAdInput {
+    mobile_image_url: String
+    desktop_image_url: String
+    redirect_url: String
+    title: String
+    is_active: Boolean
+  }
+
+  type CategoryDefaultAdResponse {
+    success: Boolean!
+    message: String
+    data: CategoryDefaultAd
+  }
+
   extend type Query {
-    # Admin queries
+    # Admin queries — global defaults
     getAllDefaultAds: [DefaultAd!]!
     getDefaultAdsByType(ad_type: String!): [DefaultAd!]!
     getDefaultAdBySlot(ad_type: String!, slot_position: Int!): DefaultAd
-    
-    # Frontend query - gets paid ads with default fallback
+
+    # Admin queries — per-category defaults
+    getCategoryDefaultAds(category_id: ID!): [CategoryDefaultAd!]!
+
+    # Frontend queries — 3-level fallback (paid → category default → global default)
     getAdsForCategory(category_id: ID!): CategoryAdsResponse
+    getAdsForProduct(product_id: ID!): CategoryAdsResponse
   }
 
   extend type Mutation {
@@ -87,6 +131,12 @@ const defaultAdSchema = gql`
     deleteDefaultAd(id: ID!): DefaultAdResponse!
     toggleDefaultAdStatus(id: ID!): DefaultAdResponse!
     uploadFile(file: Upload!, folder: String): FileUploadResponse!
+
+    # Per-category default ad mutations
+    upsertCategoryDefaultAd(category_id: ID!, input: CategoryDefaultAdInput!): CategoryDefaultAdResponse!
+    updateCategoryDefaultAd(id: ID!, input: UpdateCategoryDefaultAdInput!): CategoryDefaultAdResponse!
+    deleteCategoryDefaultAd(id: ID!): CategoryDefaultAdResponse!
+    toggleCategoryDefaultAdStatus(id: ID!): CategoryDefaultAdResponse!
   }
 `;
 

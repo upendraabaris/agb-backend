@@ -47,6 +47,7 @@ const adPricingConfigSchema = gql`
     tier: TierInfo
     banner1_quarterly_price: Float!
     stamp1_quarterly_price: Float!
+    external_url_extra_cost: Float
     duration_multipliers: DurationMultipliers
     banner_multipliers: SlotMultipliers
     stamp_multipliers: SlotMultipliers
@@ -85,6 +86,7 @@ const adPricingConfigSchema = gql`
     tier_id: ID!
     banner1_quarterly_price: Float!
     stamp1_quarterly_price: Float!
+    external_url_extra_cost: Float
     duration_multipliers: DurationMultipliersInput
     banner_multipliers: SlotMultipliersInput
     stamp_multipliers: SlotMultipliersInput
