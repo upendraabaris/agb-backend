@@ -24,6 +24,7 @@ export const ProductAdRequestSchema = gql`
     mobile_redirect_url: String
     desktop_image_url: String
     desktop_redirect_url: String
+    url_type: String
     createdAt: String
     updatedAt: String
   }
@@ -165,6 +166,7 @@ export const ProductAdRequestSchema = gql`
     desktop_image_url: String
     mobile_redirect_url: String
     desktop_redirect_url: String
+    url_type: String
   }
 
   input CreateProductAdRequestInput {

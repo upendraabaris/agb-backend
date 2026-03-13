@@ -93,7 +93,8 @@ const adPricingConfigSchema = new Schema({
   is_active: {
     type: Boolean,
     default: true
-  }
+  },
+  external_url_extra_cost: { type: Number, default: 0 }
 }, {
   timestamps: true
 });

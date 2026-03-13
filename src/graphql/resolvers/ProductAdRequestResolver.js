@@ -830,7 +830,8 @@ export const Mutation = {
                     mobile_image_url: m.mobile_image_url,
                     mobile_redirect_url: m.mobile_redirect_url,
                     desktop_image_url: m.desktop_image_url,
-                    desktop_redirect_url: m.desktop_redirect_url
+                    desktop_redirect_url: m.desktop_redirect_url,
+                    url_type: m.url_type || 'internal',
                 }));
                 await models.ProductAdRequestMedia.insertMany(medias, { session });
 
@@ -848,6 +849,8 @@ export const Mutation = {
                     const slotPriceEntry = pricingConfig.generated_prices.find(p => p.slot_name === m.slot);
                     const slotPrice = slotPriceEntry ? (slotPriceEntry[configKey] || 0) : 0;
                     const quarterlyPrice = slotPriceEntry ? (slotPriceEntry.quarterly || 0) : 0;
+                    // External URL surcharge (flat fee per slot set by admin)
+                    const externalSurcharge = (m.url_type === 'external') ? (pricingConfig.external_url_extra_cost || 0) : 0;
 
                     let durStart, durEnd;
                     const segments = [];
@@ -907,7 +910,7 @@ export const Mutation = {
                         durEnd = segments[segments.length - 1].end;
                     }
 
-                    const finalPrice = slotPrice + proRataCharge;
+                    const finalPrice = slotPrice + proRataCharge + externalSurcharge;
                     const totalDays = segments.reduce((sum, s) => sum + s.days, 0);
 
                     // Build breakdown — mirrors category: pro-rata segment + paid segments

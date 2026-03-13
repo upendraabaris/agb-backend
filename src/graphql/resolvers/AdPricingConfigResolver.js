@@ -147,8 +147,9 @@ export const Mutation = {
   // Create or update pricing config for a tier
   upsertAdPricingConfig: async (_, { input }, { models }) => {
     try {
-      const { tier_id, banner1_quarterly_price, stamp1_quarterly_price, 
-              duration_multipliers, banner_multipliers, stamp_multipliers, 
+      const { tier_id, banner1_quarterly_price, stamp1_quarterly_price,
+              external_url_extra_cost,
+              duration_multipliers, banner_multipliers, stamp_multipliers,
               tier_multipliers, is_base_tier, auto_cascade_to_other_tiers, is_active } = input;
 
       // Verify tier exists
@@ -169,6 +170,11 @@ export const Mutation = {
         is_base_tier: is_base_tier ?? false,
         is_active: is_active ?? true
       };
+
+      // External URL surcharge
+      if (external_url_extra_cost !== undefined && external_url_extra_cost !== null) {
+        updateData.external_url_extra_cost = external_url_extra_cost;
+      }
 
       // Transform multipliers if provided
       if (duration_multipliers) {

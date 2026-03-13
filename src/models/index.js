@@ -41,14 +41,14 @@ import CategoryRequestMedia from "./CategoryRequestMedia.js";
 import CategoryRequestDuration from "./CategoryRequestDuration.js";
 import AdPricingConfig from "./AdPricingConfig.js";
 import DefaultAd from "./DefaultAd.js";
+import CategoryDefaultAd from "./CategoryDefaultAd.js";
 import ProductAdRequest from "./ProductAdRequest.js";
 import ProductAdRequestMedia from "./ProductAdRequestMedia.js";
 import ProductAdRequestDuration from "./ProductAdRequestDuration.js";
 import SellerWallet from "./SellerWallet.js";
 import WalletTransaction from "./WalletTransaction.js";
 import WalletInvoice from "./WalletInvoice.js";
-import CouponUsage from "./CouponUsage.js";
-
+import CouponUsage from "./CouponUsage.js";import AdSettings from './AdSettings.js';
 export default {
   User,
   Address,
@@ -92,6 +92,7 @@ export default {
   CategoryRequestDuration,
   AdPricingConfig,
   DefaultAd,
+  CategoryDefaultAd,
   SellerWallet,
   ProductAdRequest,
   ProductAdRequestMedia,
@@ -99,4 +100,5 @@ export default {
   WalletTransaction,
   WalletInvoice,
   CouponUsage,
+  AdSettings,
 };
