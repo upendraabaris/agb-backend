@@ -182,11 +182,137 @@ export const AdReportingSchema = gql`
   }
 
   # ==========================================
+  # PRODUCT AD REPORTING TYPES
+  # ==========================================
+
+  type ProductAdRevenueBreakdown {
+    tierName: String!
+    tierId: ID!
+    revenue: Float!
+    adCount: Int!
+    bannerCount: Int!
+    stampCount: Int!
+  }
+
+  type ProductAdRevenueReport {
+    totalRevenue: Float!
+    period: String!
+    year: Int!
+    month: Int
+    quarter: Int
+    breakdown: [ProductAdRevenueBreakdown!]!
+  }
+
+  type ProductAdTierSalesReport {
+    tierId: ID!
+    tierName: String!
+    totalAdsSold: Int!
+    bannerCount: Int!
+    stampCount: Int!
+    revenue: Float!
+  }
+
+  type ProductAdPendingApprovalItem {
+    id: ID!
+    sellerId: ID!
+    sellerName: String!
+    sellerEmail: String
+    productId: ID!
+    productName: String!
+    tierId: ID!
+    tierName: String!
+    requestDate: String!
+  }
+
+  type ProductAdPendingApprovalsReport {
+    count: Int!
+    requests: [ProductAdPendingApprovalItem!]!
+  }
+
+  type ProductAdExpiryItem {
+    id: ID!
+    productAdRequestId: ID!
+    sellerId: ID!
+    sellerName: String!
+    sellerEmail: String
+    productId: ID!
+    productName: String!
+    tierId: ID!
+    tierName: String!
+    slot: String!
+    startDate: String!
+    endDate: String!
+    remainingDays: Int!
+    totalPrice: Float
+  }
+
+  type ProductAdAdvertiserSpendingReport {
+    sellerId: ID!
+    sellerName: String!
+    sellerEmail: String
+    totalSpent: Float!
+    adCount: Int!
+    activeAdsCount: Int!
+    completedAdsCount: Int!
+  }
+
+  type SellerActiveProductAdMedia {
+    slot: String!
+    mobileImageUrl: String
+    desktopImageUrl: String
+    redirectUrl: String
+  }
+
+  type SellerActiveProductAd {
+    id: ID!
+    productAdRequestId: ID!
+    productId: ID!
+    productName: String!
+    tierId: ID!
+    tierName: String!
+    slot: String!
+    status: String!
+    startDate: String!
+    endDate: String!
+    remainingDays: Int!
+    durationDays: Int!
+    totalPrice: Float
+    media: SellerActiveProductAdMedia
+  }
+
+  type SellerPastProductAd {
+    id: ID!
+    productAdRequestId: ID!
+    productId: ID!
+    productName: String!
+    tierId: ID!
+    tierName: String!
+    slot: String!
+    status: String!
+    startDate: String
+    endDate: String
+    durationDays: Int!
+    completedDate: String
+    totalPrice: Float
+  }
+
+  type ProductAdValidityInfo {
+    adId: ID!
+    productAdRequestId: ID!
+    productName: String!
+    slot: String!
+    endDate: String!
+    remainingDays: Int!
+    status: String!
+    isExpiringSoon: Boolean!
+  }
+
+  # ==========================================
   # QUERIES
   # ==========================================
 
   extend type Query {
-    # Admin Reporting Queries
+    # Admin Category Ad Reporting Queries
     getAdminRevenueReport(
       period: String!
       year: Int!
@@ -210,9 +336,36 @@ export const AdReportingSchema = gql`
       endDate: String
     ): [AdvertiserSpendingReport!]!
 
-    # Advertiser Reporting Queries (authenticated)
+    # Advertiser Category Ad Reporting Queries (authenticated)
     getMyActiveAds: [AdvertiserActiveAd!]!
     getMyPastAds: [AdvertiserPastAd!]!
     getMyAdValidity: [AdValidityInfo!]!
+
+    # Admin Product Ad Reporting Queries
+    getAdminProductAdRevenueReport(
+      period: String!
+      year: Int!
+      month: Int
+      quarter: Int
+    ): ProductAdRevenueReport!
+
+    getAdminProductAdTierSalesReport(
+      startDate: String
+      endDate: String
+    ): [ProductAdTierSalesReport!]!
+
+    getAdminProductAdPendingApprovals: ProductAdPendingApprovalsReport!
+
+    getAdminProductAdExpiryUpcoming(days: Int!): [ProductAdExpiryItem!]!
+
+    getAdminProductAdAdvertiserSpending(
+      startDate: String
+      endDate: String
+    ): [ProductAdAdvertiserSpendingReport!]!
+
+    # Seller Product Ad Reporting Queries (authenticated)
+    getMyActiveProductAds: [SellerActiveProductAd!]!
+    getMyPastProductAds: [SellerPastProductAd!]!
+    getMyProductAdValidity: [ProductAdValidityInfo!]!
   }
 `;
