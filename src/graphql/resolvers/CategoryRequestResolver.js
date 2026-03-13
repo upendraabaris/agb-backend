@@ -559,7 +559,7 @@ export const Query = {
         );
       });
 
-      return { categoryId, tierId: tierId.toString(), tierName, adCategories };
+      return { categoryId, tierId: tierId.toString(), tierName, external_url_extra_cost: pricingConfig.external_url_extra_cost || 0, adCategories };
     } catch (err) {
       console.error('[CategoryRequestResolver] getCategoryPricing error:', err);
       throw new Error('Failed to fetch pricing: ' + err.message);
@@ -1277,6 +1277,7 @@ export const Mutation = {
           const totalDays = segments.reduce((sum, s) => sum + s.days, 0);
 
           // Build breakdown with accurate per-segment subtotals
+          // NOTE: externalSurcharge is always appended as a separate line (days=0) so totals stay correct
           let breakdown;
           if (proRataCharge > 0 && segments.length > 1) {
             // Today mode: first segment is pro-rata, rest are paid quarters
@@ -1294,14 +1295,20 @@ export const Mutation = {
                 subtotal: Math.round((s.days / paidTotalDays) * slotPrice)
               }))
             ];
+            if (externalSurcharge > 0) {
+              breakdown.push({ quarter: 'External URL Surcharge', start: null, end: null, days: 0, rate_per_day: 0, subtotal: externalSurcharge });
+            }
           } else {
-            // Next quarter mode: uniform rate across all segments
-            const ratePerDay = Math.round((finalPrice / totalDays) * 100) / 100;
+            // Next quarter mode: rate is based on slotPrice only (surcharge is a separate line)
+            const ratePerDay = totalDays > 0 ? Math.round((slotPrice / totalDays) * 100) / 100 : 0;
             breakdown = segments.map(s => ({
               quarter: s.quarter, start: s.start.toISOString(), end: s.end.toISOString(), days: s.days,
               rate_per_day: ratePerDay,
               subtotal: Math.round(ratePerDay * s.days)
             }));
+            if (externalSurcharge > 0) {
+              breakdown.push({ quarter: 'External URL Surcharge', start: null, end: null, days: 0, rate_per_day: 0, subtotal: externalSurcharge });
+            }
           }
 
           const quarters = [...new Set(segments.map(s => s.quarter))];
