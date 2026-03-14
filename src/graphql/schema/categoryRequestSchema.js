@@ -200,7 +200,8 @@ export const CategoryRequestSchema = gql`
     categoryId: ID!
     tierId: ID!
     tierName: String!
-    external_url_extra_cost: Float
+    banner_external_url_extra_cost: Float
+    stamp_external_url_extra_cost: Float
     adCategories: [AdCategoryPricing!]!
   }
 

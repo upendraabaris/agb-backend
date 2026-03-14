@@ -345,7 +345,7 @@ export const Query = {
                 );
             });
 
-            return { tierId: tierId.toString(), tierName, adCategories };
+            return { tierId: tierId.toString(), tierName, banner_external_url_extra_cost: pricingConfig.banner_external_url_extra_cost ?? 0, stamp_external_url_extra_cost: pricingConfig.stamp_external_url_extra_cost ?? 0, adCategories };
         } catch (err) {
             console.error('[getProductAdPricing] error:', err);
             throw new Error('Failed to fetch product ad pricing: ' + err.message);
@@ -849,8 +849,11 @@ export const Mutation = {
                     const slotPriceEntry = pricingConfig.generated_prices.find(p => p.slot_name === m.slot);
                     const slotPrice = slotPriceEntry ? (slotPriceEntry[configKey] || 0) : 0;
                     const quarterlyPrice = slotPriceEntry ? (slotPriceEntry.quarterly || 0) : 0;
-                    // External URL surcharge (flat fee per slot set by admin)
-                    const externalSurcharge = (m.url_type === 'external') ? (pricingConfig.external_url_extra_cost || 0) : 0;
+                    // External URL surcharge (flat fee per ad type set by admin)
+                    const slotAdType = m.slot ? m.slot.split('_')[0] : 'banner';
+                    const externalSurcharge = (m.url_type === 'external')
+                      ? (slotAdType === 'stamp' ? (pricingConfig.stamp_external_url_extra_cost || 0) : (pricingConfig.banner_external_url_extra_cost || 0))
+                      : 0;
 
                     let durStart, durEnd;
                     const segments = [];
