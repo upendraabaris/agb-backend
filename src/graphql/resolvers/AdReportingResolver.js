@@ -14,7 +14,7 @@ export const Query = {
     /**
      * Get revenue report for a specific period (monthly/quarterly/annual)
      */
-    getAdminRevenueReport: async (_, { period, year, month, quarter }, { models }) => {
+    getAdminRevenueReport: async (_, { period, year, month, quarter, half }, { models }) => {
         try {
             // Build date filter based on period
             let startDate, endDate;
@@ -31,8 +31,13 @@ export const Query = {
             } else if (period === 'annual') {
                 startDate = new Date(year, 0, 1);
                 endDate = new Date(year, 11, 31, 23, 59, 59);
+            } else if (period === 'half-yearly') {
+                if (!half) throw new Error('Half (1 or 2) is required for half-yearly reports');
+                const startMonth = half === 1 ? 0 : 6;
+                startDate = new Date(year, startMonth, 1);
+                endDate = new Date(year, startMonth + 6, 0, 23, 59, 59);
             } else {
-                throw new Error('Invalid period. Use: monthly, quarterly, or annual');
+                throw new Error('Invalid period. Use: quarterly, half-yearly, or annual');
             }
 
             // Find all approved/running/completed category requests in the date range
@@ -715,6 +720,485 @@ export const Query = {
         } catch (err) {
             console.error('[getMyAdValidity] error:', err);
             throw new Error('Failed to get ad validity info: ' + err.message);
+        }
+    }),
+
+    // ==========================================
+    // ADMIN PRODUCT AD REPORTING QUERIES
+    // ==========================================
+
+    /**
+     * Get product ad revenue report for a specific period (monthly/quarterly/annual)
+     */
+    getAdminProductAdRevenueReport: async (_, { period, year, month, quarter, half }, { models }) => {
+        try {
+            let startDate, endDate;
+            if (period === 'monthly') {
+                if (!month) throw new Error('Month is required for monthly reports');
+                startDate = new Date(year, month - 1, 1);
+                endDate = new Date(year, month, 0, 23, 59, 59);
+            } else if (period === 'quarterly') {
+                if (!quarter) throw new Error('Quarter is required for quarterly reports');
+                const startMonth = (quarter - 1) * 3;
+                startDate = new Date(year, startMonth, 1);
+                endDate = new Date(year, startMonth + 3, 0, 23, 59, 59);
+            } else if (period === 'annual') {
+                startDate = new Date(year, 0, 1);
+                endDate = new Date(year, 11, 31, 23, 59, 59);
+            } else if (period === 'half-yearly') {
+                if (!half) throw new Error('Half (1 or 2) is required for half-yearly reports');
+                const startMonth = half === 1 ? 0 : 6;
+                startDate = new Date(year, startMonth, 1);
+                endDate = new Date(year, startMonth + 6, 0, 23, 59, 59);
+            } else {
+                throw new Error('Invalid period. Use: quarterly, half-yearly, or annual');
+            }
+
+            const productAdRequests = await models.ProductAdRequest.find({
+                status: { $in: ['approved', 'running'] },
+                createdAt: { $gte: startDate, $lte: endDate }
+            })
+                .populate('tier_id', 'name')
+                .lean();
+
+            const tierIds = [...new Set(productAdRequests.map(r => r.tier_id?._id?.toString()).filter(Boolean))];
+
+            const breakdown = [];
+            let totalRevenue = 0;
+
+            for (const tierId of tierIds) {
+                const tierRequests = productAdRequests.filter(r => r.tier_id?._id?.toString() === tierId);
+                const tierName = tierRequests[0]?.tier_id?.name || 'Unknown';
+                const requestIds = tierRequests.map(r => r._id);
+
+                const durations = await models.ProductAdRequestDuration.find({
+                    product_ad_request_id: { $in: requestIds },
+                    status: { $in: ['approved', 'running', 'completed'] }
+                }).lean();
+
+                let bannerCount = 0;
+                let stampCount = 0;
+                let tierRevenue = 0;
+
+                for (const dur of durations) {
+                    if (dur.slot.startsWith('banner')) bannerCount++;
+                    else if (dur.slot.startsWith('stamp')) stampCount++;
+                    tierRevenue += dur.total_price || 0;
+                }
+
+                totalRevenue += tierRevenue;
+
+                breakdown.push({
+                    tierId,
+                    tierName,
+                    revenue: tierRevenue,
+                    adCount: bannerCount + stampCount,
+                    bannerCount,
+                    stampCount
+                });
+            }
+
+            return { totalRevenue, period, year, month: month || null, quarter: quarter || null, breakdown };
+        } catch (err) {
+            console.error('[getAdminProductAdRevenueReport] error:', err);
+            throw new Error('Failed to generate product ad revenue report: ' + err.message);
+        }
+    },
+
+    /**
+     * Get product ads sold by tier with optional date filtering
+     */
+    getAdminProductAdTierSalesReport: async (_, { startDate, endDate }, { models }) => {
+        try {
+            const dateFilter = {};
+            if (startDate || endDate) {
+                dateFilter.createdAt = {};
+                if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
+                if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
+            }
+
+            const productAdRequests = await models.ProductAdRequest.find({
+                status: { $in: ['approved', 'running'] },
+                ...dateFilter
+            })
+                .populate('tier_id', 'name')
+                .lean();
+
+            const requestIds = productAdRequests.map(r => r._id);
+            const allDurations = await models.ProductAdRequestDuration.find({
+                product_ad_request_id: { $in: requestIds },
+                status: { $in: ['approved', 'running', 'completed'] }
+            }).lean();
+
+            const tierMap = {};
+
+            for (const request of productAdRequests) {
+                const tierId = request.tier_id?._id?.toString();
+                if (!tierId) continue;
+
+                if (!tierMap[tierId]) {
+                    tierMap[tierId] = {
+                        tierId,
+                        tierName: request.tier_id?.name || 'Unknown',
+                        totalAdsSold: 0,
+                        bannerCount: 0,
+                        stampCount: 0,
+                        revenue: 0
+                    };
+                }
+
+                const requestDurations = allDurations.filter(
+                    d => d.product_ad_request_id.toString() === request._id.toString()
+                );
+
+                requestDurations.forEach(dur => {
+                    if (dur.slot.startsWith('banner')) tierMap[tierId].bannerCount++;
+                    else if (dur.slot.startsWith('stamp')) tierMap[tierId].stampCount++;
+                    tierMap[tierId].revenue += dur.total_price || 0;
+                });
+
+                tierMap[tierId].totalAdsSold += requestDurations.length;
+            }
+
+            return Object.values(tierMap);
+        } catch (err) {
+            console.error('[getAdminProductAdTierSalesReport] error:', err);
+            throw new Error('Failed to generate product ad tier sales report: ' + err.message);
+        }
+    },
+
+    /**
+     * Get pending product ad approval requests
+     */
+    getAdminProductAdPendingApprovals: async (_, __, { models }) => {
+        try {
+            const pendingRequests = await models.ProductAdRequest.find({ status: 'pending' })
+                .populate('seller_id', 'firstName lastName email')
+                .populate('product_id', 'fullName previewName')
+                .populate('tier_id', 'name')
+                .sort({ createdAt: -1 })
+                .lean();
+
+            const requests = pendingRequests.map(req => {
+                const sellerObj = req.seller_id;
+                const productObj = req.product_id;
+                return {
+                    id: req._id.toString(),
+                    sellerId: sellerObj?._id?.toString() || '',
+                    sellerName: sellerObj ? `${sellerObj.firstName || ''} ${sellerObj.lastName || ''}`.trim() || 'Unknown' : 'Unknown',
+                    sellerEmail: sellerObj?.email || null,
+                    productId: productObj?._id?.toString() || '',
+                    productName: productObj?.fullName || productObj?.previewName || 'Unknown',
+                    tierId: req.tier_id?._id?.toString() || '',
+                    tierName: req.tier_id?.name || 'Unknown',
+                    requestDate: req.createdAt ? new Date(req.createdAt).toISOString() : ''
+                };
+            });
+
+            return { count: requests.length, requests };
+        } catch (err) {
+            console.error('[getAdminProductAdPendingApprovals] error:', err);
+            throw new Error('Failed to get pending product ad approvals: ' + err.message);
+        }
+    },
+
+    /**
+     * Get product ads expiring within specified days
+     */
+    getAdminProductAdExpiryUpcoming: async (_, { days }, { models }) => {
+        try {
+            const currentDate = new Date();
+            const futureDate = new Date();
+            futureDate.setDate(currentDate.getDate() + days);
+
+            const expiringDurations = await models.ProductAdRequestDuration.find({
+                status: { $in: ['approved', 'running'] },
+                end_date: { $gte: currentDate, $lte: futureDate }
+            })
+                .sort({ end_date: 1 })
+                .lean();
+
+            const result = [];
+
+            for (const duration of expiringDurations) {
+                const productAdRequest = await models.ProductAdRequest.findById(duration.product_ad_request_id)
+                    .populate('seller_id', 'firstName lastName email')
+                    .populate('product_id', 'fullName previewName')
+                    .populate('tier_id', 'name')
+                    .lean();
+
+                if (!productAdRequest) continue;
+
+                const remainingDays = Math.ceil((new Date(duration.end_date) - currentDate) / (1000 * 60 * 60 * 24));
+                const sellerObj = productAdRequest.seller_id;
+                const productObj = productAdRequest.product_id;
+
+                result.push({
+                    id: duration._id.toString(),
+                    productAdRequestId: productAdRequest._id.toString(),
+                    sellerId: sellerObj?._id?.toString() || '',
+                    sellerName: sellerObj ? `${sellerObj.firstName || ''} ${sellerObj.lastName || ''}`.trim() || 'Unknown' : 'Unknown',
+                    sellerEmail: sellerObj?.email || null,
+                    productId: productObj?._id?.toString() || '',
+                    productName: productObj?.fullName || productObj?.previewName || 'Unknown',
+                    tierId: productAdRequest.tier_id?._id?.toString() || '',
+                    tierName: productAdRequest.tier_id?.name || 'Unknown',
+                    slot: duration.slot,
+                    startDate: duration.start_date ? new Date(duration.start_date).toISOString() : '',
+                    endDate: duration.end_date ? new Date(duration.end_date).toISOString() : '',
+                    remainingDays,
+                    totalPrice: duration.total_price || 0
+                });
+            }
+
+            return result;
+        } catch (err) {
+            console.error('[getAdminProductAdExpiryUpcoming] error:', err);
+            throw new Error('Failed to get expiring product ads: ' + err.message);
+        }
+    },
+
+    /**
+     * Get seller-wise product ad spending report
+     */
+    getAdminProductAdAdvertiserSpending: async (_, { startDate, endDate }, { models }) => {
+        try {
+            const dateFilter = {};
+            if (startDate || endDate) {
+                dateFilter.createdAt = {};
+                if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
+                if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
+            }
+
+            const productAdRequests = await models.ProductAdRequest.find({
+                status: { $in: ['approved', 'running'] },
+                ...dateFilter
+            })
+                .populate('seller_id', 'firstName lastName email')
+                .lean();
+
+            const allRequestIds = productAdRequests.map(r => r._id);
+            const allDurations = await models.ProductAdRequestDuration.find({
+                product_ad_request_id: { $in: allRequestIds },
+                status: { $in: ['approved', 'running', 'completed'] }
+            }).lean();
+
+            const sellerMap = {};
+
+            for (const request of productAdRequests) {
+                const sellerId = request.seller_id?._id?.toString();
+                if (!sellerId) continue;
+
+                if (!sellerMap[sellerId]) {
+                    const sellerObj = request.seller_id;
+                    sellerMap[sellerId] = {
+                        sellerId,
+                        sellerName: sellerObj ? `${sellerObj.firstName || ''} ${sellerObj.lastName || ''}`.trim() || 'Unknown' : 'Unknown',
+                        sellerEmail: sellerObj?.email || null,
+                        totalSpent: 0,
+                        adCount: 0,
+                        activeAdsCount: 0,
+                        completedAdsCount: 0
+                    };
+                }
+
+                const requestDurations = allDurations.filter(
+                    d => d.product_ad_request_id.toString() === request._id.toString()
+                );
+
+                for (const dur of requestDurations) {
+                    sellerMap[sellerId].adCount++;
+                    sellerMap[sellerId].totalSpent += dur.total_price || 0;
+                    if (dur.status === 'approved' || dur.status === 'running') {
+                        sellerMap[sellerId].activeAdsCount++;
+                    } else if (dur.status === 'completed') {
+                        sellerMap[sellerId].completedAdsCount++;
+                    }
+                }
+            }
+
+            return Object.values(sellerMap).sort((a, b) => b.totalSpent - a.totalSpent);
+        } catch (err) {
+            console.error('[getAdminProductAdAdvertiserSpending] error:', err);
+            throw new Error('Failed to generate product ad advertiser spending report: ' + err.message);
+        }
+    },
+
+    // ==========================================
+    // SELLER PRODUCT AD REPORTING QUERIES
+    // ==========================================
+
+    /**
+     * Get seller's currently active product ads
+     */
+    getMyActiveProductAds: authenticate(['seller', 'adManager'])(async (_, __, { models, req }) => {
+        try {
+            const authHeader = req.headers.authorization;
+            if (!authHeader) throw new Error('Authorization header missing');
+            const token = authHeader.split(' ')[1];
+            if (!token) throw new Error('Token missing');
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            const sellerId = decoded._id;
+
+            const productAdRequests = await models.ProductAdRequest.find({
+                seller_id: sellerId,
+                status: { $in: ['approved', 'running'] }
+            })
+                .populate('product_id', 'fullName previewName')
+                .populate('tier_id', 'name')
+                .lean();
+
+            const result = [];
+
+            for (const request of productAdRequests) {
+                const durations = await models.ProductAdRequestDuration.find({
+                    product_ad_request_id: request._id,
+                    status: { $in: ['approved', 'running'] }
+                }).lean();
+
+                const medias = await models.ProductAdRequestMedia.find({
+                    product_ad_request_id: request._id
+                }).lean();
+
+                for (const duration of durations) {
+                    const media = medias.find(m => m.slot === duration.slot);
+                    const currentDate = new Date();
+                    const endDate = new Date(duration.end_date);
+                    const remainingDays = Math.ceil((endDate - currentDate) / (1000 * 60 * 60 * 24));
+
+                    result.push({
+                        id: duration._id.toString(),
+                        productAdRequestId: request._id.toString(),
+                        productId: request.product_id?._id?.toString() || '',
+                        productName: request.product_id?.fullName || request.product_id?.previewName || 'Unknown',
+                        tierId: request.tier_id?._id?.toString() || '',
+                        tierName: request.tier_id?.name || 'Unknown',
+                        slot: duration.slot,
+                        status: duration.status,
+                        startDate: duration.start_date ? new Date(duration.start_date).toISOString() : '',
+                        endDate: duration.end_date ? new Date(duration.end_date).toISOString() : '',
+                        remainingDays: remainingDays > 0 ? remainingDays : 0,
+                        durationDays: duration.duration_days || 0,
+                        totalPrice: duration.total_price || 0,
+                        media: media ? {
+                            slot: media.slot,
+                            mobileImageUrl: media.mobile_image_url || null,
+                            desktopImageUrl: media.desktop_image_url || null,
+                            redirectUrl: media.mobile_redirect_url || media.desktop_redirect_url || null
+                        } : null
+                    });
+                }
+            }
+
+            return result.sort((a, b) => a.remainingDays - b.remainingDays);
+        } catch (err) {
+            console.error('[getMyActiveProductAds] error:', err);
+            throw new Error('Failed to get active product ads: ' + err.message);
+        }
+    }),
+
+    /**
+     * Get seller's past product ads
+     */
+    getMyPastProductAds: authenticate(['seller', 'adManager'])(async (_, __, { models, req }) => {
+        try {
+            const authHeader = req.headers.authorization;
+            if (!authHeader) throw new Error('Authorization header missing');
+            const token = authHeader.split(' ')[1];
+            if (!token) throw new Error('Token missing');
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            const sellerId = decoded._id;
+
+            const productAdRequests = await models.ProductAdRequest.find({ seller_id: sellerId })
+                .populate('product_id', 'fullName previewName')
+                .populate('tier_id', 'name')
+                .sort({ updatedAt: -1 })
+                .lean();
+
+            const result = [];
+
+            for (const request of productAdRequests) {
+                const durations = await models.ProductAdRequestDuration.find({
+                    product_ad_request_id: request._id,
+                    status: { $nin: ['approved', 'running'] }
+                }).lean();
+
+                for (const duration of durations) {
+                    result.push({
+                        id: duration._id.toString(),
+                        productAdRequestId: request._id.toString(),
+                        productId: request.product_id?._id?.toString() || '',
+                        productName: request.product_id?.fullName || request.product_id?.previewName || 'Unknown',
+                        tierId: request.tier_id?._id?.toString() || '',
+                        tierName: request.tier_id?.name || 'Unknown',
+                        slot: duration.slot,
+                        status: duration.status,
+                        startDate: duration.start_date ? new Date(duration.start_date).toISOString() : null,
+                        endDate: duration.end_date ? new Date(duration.end_date).toISOString() : null,
+                        durationDays: duration.duration_days || 0,
+                        completedDate: duration.updatedAt ? new Date(duration.updatedAt).toISOString() : null,
+                        totalPrice: duration.total_price || 0
+                    });
+                }
+            }
+
+            return result;
+        } catch (err) {
+            console.error('[getMyPastProductAds] error:', err);
+            throw new Error('Failed to get past product ads: ' + err.message);
+        }
+    }),
+
+    /**
+     * Get validity info for seller's active product ads
+     */
+    getMyProductAdValidity: authenticate(['seller', 'adManager'])(async (_, __, { models, req }) => {
+        try {
+            const authHeader = req.headers.authorization;
+            if (!authHeader) throw new Error('Authorization header missing');
+            const token = authHeader.split(' ')[1];
+            if (!token) throw new Error('Token missing');
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            const sellerId = decoded._id;
+
+            const productAdRequests = await models.ProductAdRequest.find({
+                seller_id: sellerId,
+                status: { $in: ['approved', 'running'] }
+            })
+                .populate('product_id', 'fullName previewName')
+                .lean();
+
+            const result = [];
+
+            for (const request of productAdRequests) {
+                const durations = await models.ProductAdRequestDuration.find({
+                    product_ad_request_id: request._id,
+                    status: { $in: ['approved', 'running'] }
+                }).lean();
+
+                for (const duration of durations) {
+                    const currentDate = new Date();
+                    const endDate = new Date(duration.end_date);
+                    const remainingDays = Math.ceil((endDate - currentDate) / (1000 * 60 * 60 * 24));
+                    const isExpiringSoon = remainingDays <= 7 && remainingDays > 0;
+
+                    result.push({
+                        adId: duration._id.toString(),
+                        productAdRequestId: request._id.toString(),
+                        productName: request.product_id?.fullName || request.product_id?.previewName || 'Unknown',
+                        slot: duration.slot,
+                        endDate: duration.end_date ? new Date(duration.end_date).toISOString() : '',
+                        remainingDays: remainingDays > 0 ? remainingDays : 0,
+                        status: duration.status,
+                        isExpiringSoon
+                    });
+                }
+            }
+
+            return result.sort((a, b) => a.remainingDays - b.remainingDays);
+        } catch (err) {
+            console.error('[getMyProductAdValidity] error:', err);
+            throw new Error('Failed to get product ad validity info: ' + err.message);
         }
     })
 };
