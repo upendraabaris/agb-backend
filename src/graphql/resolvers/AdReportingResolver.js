@@ -14,7 +14,7 @@ export const Query = {
     /**
      * Get revenue report for a specific period (monthly/quarterly/annual)
      */
-    getAdminRevenueReport: async (_, { period, year, month, quarter }, { models }) => {
+    getAdminRevenueReport: async (_, { period, year, month, quarter, half }, { models }) => {
         try {
             // Build date filter based on period
             let startDate, endDate;
@@ -31,8 +31,13 @@ export const Query = {
             } else if (period === 'annual') {
                 startDate = new Date(year, 0, 1);
                 endDate = new Date(year, 11, 31, 23, 59, 59);
+            } else if (period === 'half-yearly') {
+                if (!half) throw new Error('Half (1 or 2) is required for half-yearly reports');
+                const startMonth = half === 1 ? 0 : 6;
+                startDate = new Date(year, startMonth, 1);
+                endDate = new Date(year, startMonth + 6, 0, 23, 59, 59);
             } else {
-                throw new Error('Invalid period. Use: monthly, quarterly, or annual');
+                throw new Error('Invalid period. Use: quarterly, half-yearly, or annual');
             }
 
             // Find all approved/running/completed category requests in the date range
@@ -725,7 +730,7 @@ export const Query = {
     /**
      * Get product ad revenue report for a specific period (monthly/quarterly/annual)
      */
-    getAdminProductAdRevenueReport: async (_, { period, year, month, quarter }, { models }) => {
+    getAdminProductAdRevenueReport: async (_, { period, year, month, quarter, half }, { models }) => {
         try {
             let startDate, endDate;
             if (period === 'monthly') {
@@ -740,8 +745,13 @@ export const Query = {
             } else if (period === 'annual') {
                 startDate = new Date(year, 0, 1);
                 endDate = new Date(year, 11, 31, 23, 59, 59);
+            } else if (period === 'half-yearly') {
+                if (!half) throw new Error('Half (1 or 2) is required for half-yearly reports');
+                const startMonth = half === 1 ? 0 : 6;
+                startDate = new Date(year, startMonth, 1);
+                endDate = new Date(year, startMonth + 6, 0, 23, 59, 59);
             } else {
-                throw new Error('Invalid period. Use: monthly, quarterly, or annual');
+                throw new Error('Invalid period. Use: quarterly, half-yearly, or annual');
             }
 
             const productAdRequests = await models.ProductAdRequest.find({

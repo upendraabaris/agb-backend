@@ -316,8 +316,8 @@ export const AdReportingSchema = gql`
     getAdminRevenueReport(
       period: String!
       year: Int!
-      month: Int
       quarter: Int
+      half: Int
     ): RevenueReport!
 
     getAdminTierSalesReport(
@@ -345,8 +345,8 @@ export const AdReportingSchema = gql`
     getAdminProductAdRevenueReport(
       period: String!
       year: Int!
-      month: Int
       quarter: Int
+      half: Int
     ): ProductAdRevenueReport!
 
     getAdminProductAdTierSalesReport(
