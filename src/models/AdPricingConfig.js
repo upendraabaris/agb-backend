@@ -94,7 +94,8 @@ const adPricingConfigSchema = new Schema({
     type: Boolean,
     default: true
   },
-  external_url_extra_cost: { type: Number, default: 0 }
+  banner_external_url_extra_cost: { type: Number, default: 0 },
+  stamp_external_url_extra_cost: { type: Number, default: 0 }
 }, {
   timestamps: true
 });

@@ -224,6 +224,102 @@ const Server = async () => {
     }
   });
 
+  // CRON JOB: Ad duration expiry — mark expired durations and parent requests as 'completed'
+  cron.schedule("* * * * *", async () => {
+    try {
+      const now = new Date(
+        new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+      );
+      console.log(`🕐 Ad expiry cron fired at ${now.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}`);
+
+      // ── CategoryRequestDuration ──────────────────────────────────────
+      const expiredCategoryDurations = await models.CategoryRequestDuration.find({
+        status: { $in: ["approved", "running"] },
+        end_date: { $lt: now },
+      });
+
+      if (expiredCategoryDurations.length > 0) {
+        const expiredIds = expiredCategoryDurations.map((d) => d._id);
+        await models.CategoryRequestDuration.updateMany(
+          { _id: { $in: expiredIds } },
+          { $set: { status: "completed" } }
+        );
+
+        // For each affected parent CategoryRequest, check if all its durations are done
+        const parentIds = [
+          ...new Set(
+            expiredCategoryDurations.map((d) =>
+              d.category_request_id.toString()
+            )
+          ),
+        ];
+
+        for (const parentId of parentIds) {
+          const remaining = await models.CategoryRequestDuration.countDocuments({
+            category_request_id: parentId,
+            status: { $in: ["pending", "approved", "running"] },
+          });
+          if (remaining === 0) {
+            await models.CategoryRequest.updateOne(
+              { _id: parentId },
+              { $set: { status: "completed" } }
+            );
+          }
+        }
+
+        console.log(
+          `✅ Ad expiry cron: ${expiredCategoryDurations.length} CategoryRequestDuration(s) marked completed`
+        );
+      } else {
+        console.log("ℹ️  No expired CategoryRequestDurations found.");
+      }
+
+      // ── ProductAdRequestDuration ─────────────────────────────────────
+      const expiredProductDurations = await models.ProductAdRequestDuration.find({
+        status: { $in: ["approved", "running"] },
+        end_date: { $lt: now },
+      });
+
+      if (expiredProductDurations.length > 0) {
+        const expiredIds = expiredProductDurations.map((d) => d._id);
+        await models.ProductAdRequestDuration.updateMany(
+          { _id: { $in: expiredIds } },
+          { $set: { status: "completed" } }
+        );
+
+        // For each affected parent ProductAdRequest, check if all its durations are done
+        const parentIds = [
+          ...new Set(
+            expiredProductDurations.map((d) =>
+              d.product_ad_request_id.toString()
+            )
+          ),
+        ];
+
+        for (const parentId of parentIds) {
+          const remaining = await models.ProductAdRequestDuration.countDocuments({
+            product_ad_request_id: parentId,
+            status: { $in: ["pending", "approved", "running"] },
+          });
+          if (remaining === 0) {
+            await models.ProductAdRequest.updateOne(
+              { _id: parentId },
+              { $set: { status: "completed" } }
+            );
+          }
+        }
+
+        console.log(
+          `✅ Ad expiry cron: ${expiredProductDurations.length} ProductAdRequestDuration(s) marked completed`
+        );
+      } else {
+        console.log("ℹ️  No expired ProductAdRequestDurations found.");
+      }
+    } catch (error) {
+      console.error("❌ Error in ad expiry cron job:", error);
+    }
+  });
+
   await new Promise((resolve) =>
     httpServer.listen({ port: process.env.PORT }, resolve)
   );

@@ -49,6 +49,8 @@ const formatConfigResponse = async (config) => {
     } : null,
     banner1_quarterly_price: config.banner1_quarterly_price,
     stamp1_quarterly_price: config.stamp1_quarterly_price,
+    banner_external_url_extra_cost: config.banner_external_url_extra_cost ?? 0,
+    stamp_external_url_extra_cost: config.stamp_external_url_extra_cost ?? 0,
     duration_multipliers: config.duration_multipliers,
     banner_multipliers: transformMultipliers(config.banner_multipliers),
     stamp_multipliers: transformMultipliers(config.stamp_multipliers),
@@ -148,7 +150,8 @@ export const Mutation = {
   upsertAdPricingConfig: async (_, { input }, { models }) => {
     try {
       const { tier_id, banner1_quarterly_price, stamp1_quarterly_price,
-              external_url_extra_cost,
+              banner_external_url_extra_cost,
+              stamp_external_url_extra_cost,
               duration_multipliers, banner_multipliers, stamp_multipliers,
               tier_multipliers, is_base_tier, auto_cascade_to_other_tiers, is_active } = input;
 
@@ -171,9 +174,12 @@ export const Mutation = {
         is_active: is_active ?? true
       };
 
-      // External URL surcharge
-      if (external_url_extra_cost !== undefined && external_url_extra_cost !== null) {
-        updateData.external_url_extra_cost = external_url_extra_cost;
+      // External URL surcharges (per ad type)
+      if (banner_external_url_extra_cost !== undefined && banner_external_url_extra_cost !== null) {
+        updateData.banner_external_url_extra_cost = banner_external_url_extra_cost;
+      }
+      if (stamp_external_url_extra_cost !== undefined && stamp_external_url_extra_cost !== null) {
+        updateData.stamp_external_url_extra_cost = stamp_external_url_extra_cost;
       }
 
       // Transform multipliers if provided
@@ -248,7 +254,11 @@ export const Mutation = {
           } else if (config.stamp_multipliers) {
             cascadeUpdateData.stamp_multipliers = config.stamp_multipliers;
           }
-          
+
+          // Cascade external URL surcharges (same flat fee for all tiers)
+          cascadeUpdateData.banner_external_url_extra_cost = banner_external_url_extra_cost ?? config.banner_external_url_extra_cost ?? 0;
+          cascadeUpdateData.stamp_external_url_extra_cost = stamp_external_url_extra_cost ?? config.stamp_external_url_extra_cost ?? 0;
+
           // Find or create config for this tier
           let otherConfig = await AdPricingConfig.findOne({ tier_id: otherTier._id });
           

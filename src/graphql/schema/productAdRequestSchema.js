@@ -141,6 +141,8 @@ export const ProductAdRequestSchema = gql`
   type ProductPricingResult {
     tierId: ID!
     tierName: String!
+    banner_external_url_extra_cost: Float
+    stamp_external_url_extra_cost: Float
     adCategories: [ProductAdPricingEntry!]!
   }
 
