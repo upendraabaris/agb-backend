@@ -42,5 +42,7 @@ export const StoreFeatureSchema = gql`
     removeAdminRole(userID:ID):Success
     addAdManagerRole(userID:ID):Success
     removeAdManagerRole(userID:ID):Success
+    addAdsAssociateRole(userID:ID):Success
+    removeAdsAssociateRole(userID:ID):Success
   }
 `;

@@ -3,7 +3,7 @@ import authenticate from '../../middlewares/auth.js';
 
 // Helper: get actual revenue amount (final_price after coupon, or total_price for old records)
 const getEffectivePrice = (dur) => {
-    return (dur.final_price != null && dur.final_price > 0) ? dur.final_price : (dur.total_price || 0);
+    return (dur.final_price != null) ? dur.final_price : (dur.total_price || 0);
 };
 
 export const Query = {
@@ -525,7 +525,7 @@ export const Query = {
     /**
      * Get seller's currently active ads
      */
-    getMyActiveAds: authenticate(['seller', 'adManager'])(async (_, __, { models, req }) => {
+    getMyActiveAds: authenticate(['seller', 'adManager', 'adsAssociate'])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error('Authorization header missing');
@@ -604,7 +604,7 @@ export const Query = {
     /**
      * Get seller's past ads
      */
-    getMyPastAds: authenticate(['seller', 'adManager'])(async (_, __, { models, req }) => {
+    getMyPastAds: authenticate(['seller', 'adManager', 'adsAssociate'])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error('Authorization header missing');
@@ -668,7 +668,7 @@ export const Query = {
     /**
      * Get validity info for seller's active ads
      */
-    getMyAdValidity: authenticate(['seller', 'adManager'])(async (_, __, { models, req }) => {
+    getMyAdValidity: authenticate(['seller', 'adManager', 'adsAssociate'])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error('Authorization header missing');
@@ -765,6 +765,8 @@ export const Query = {
 
             const breakdown = [];
             let totalRevenue = 0;
+            let totalCouponDiscount = 0;
+            let totalNetRevenue = 0;
 
             for (const tierId of tierIds) {
                 const tierRequests = productAdRequests.filter(r => r.tier_id?._id?.toString() === tierId);
@@ -779,14 +781,19 @@ export const Query = {
                 let bannerCount = 0;
                 let stampCount = 0;
                 let tierRevenue = 0;
+                let tierCouponDiscount = 0;
 
                 for (const dur of durations) {
                     if (dur.slot.startsWith('banner')) bannerCount++;
                     else if (dur.slot.startsWith('stamp')) stampCount++;
                     tierRevenue += dur.total_price || 0;
+                    tierCouponDiscount += dur.coupon_discount_amount || 0;
                 }
 
+                const tierNetRevenue = tierRevenue - tierCouponDiscount;
                 totalRevenue += tierRevenue;
+                totalCouponDiscount += tierCouponDiscount;
+                totalNetRevenue += tierNetRevenue;
 
                 breakdown.push({
                     tierId,
@@ -794,11 +801,22 @@ export const Query = {
                     revenue: tierRevenue,
                     adCount: bannerCount + stampCount,
                     bannerCount,
-                    stampCount
+                    stampCount,
+                    couponDiscount: tierCouponDiscount,
+                    netRevenue: tierNetRevenue
                 });
             }
 
-            return { totalRevenue, period, year, month: month || null, quarter: quarter || null, breakdown };
+            return {
+                totalRevenue,
+                totalCouponDiscount,
+                totalNetRevenue,
+                period,
+                year,
+                month: month || null,
+                quarter: quarter || null,
+                breakdown
+            };
         } catch (err) {
             console.error('[getAdminProductAdRevenueReport] error:', err);
             throw new Error('Failed to generate product ad revenue report: ' + err.message);
@@ -843,7 +861,9 @@ export const Query = {
                         totalAdsSold: 0,
                         bannerCount: 0,
                         stampCount: 0,
-                        revenue: 0
+                        revenue: 0,
+                        couponDiscount: 0,
+                        netRevenue: 0
                     };
                 }
 
@@ -855,12 +875,16 @@ export const Query = {
                     if (dur.slot.startsWith('banner')) tierMap[tierId].bannerCount++;
                     else if (dur.slot.startsWith('stamp')) tierMap[tierId].stampCount++;
                     tierMap[tierId].revenue += dur.total_price || 0;
+                    tierMap[tierId].couponDiscount += dur.coupon_discount_amount || 0;
                 });
 
                 tierMap[tierId].totalAdsSold += requestDurations.length;
             }
 
-            return Object.values(tierMap);
+            return Object.values(tierMap).map(t => ({
+                ...t,
+                netRevenue: t.revenue - t.couponDiscount
+            }));
         } catch (err) {
             console.error('[getAdminProductAdTierSalesReport] error:', err);
             throw new Error('Failed to generate product ad tier sales report: ' + err.message);
@@ -947,7 +971,10 @@ export const Query = {
                     startDate: duration.start_date ? new Date(duration.start_date).toISOString() : '',
                     endDate: duration.end_date ? new Date(duration.end_date).toISOString() : '',
                     remainingDays,
-                    totalPrice: duration.total_price || 0
+                    totalPrice: duration.total_price || 0,
+                    couponCode: duration.coupon_code || null,
+                    couponDiscountAmount: duration.coupon_discount_amount || 0,
+                    finalPrice: getEffectivePrice(duration)
                 });
             }
 
@@ -998,7 +1025,8 @@ export const Query = {
                         totalSpent: 0,
                         adCount: 0,
                         activeAdsCount: 0,
-                        completedAdsCount: 0
+                        completedAdsCount: 0,
+                        totalCouponDiscount: 0
                     };
                 }
 
@@ -1008,7 +1036,8 @@ export const Query = {
 
                 for (const dur of requestDurations) {
                     sellerMap[sellerId].adCount++;
-                    sellerMap[sellerId].totalSpent += dur.total_price || 0;
+                    sellerMap[sellerId].totalSpent += getEffectivePrice(dur);
+                    sellerMap[sellerId].totalCouponDiscount += dur.coupon_discount_amount || 0;
                     if (dur.status === 'approved' || dur.status === 'running') {
                         sellerMap[sellerId].activeAdsCount++;
                     } else if (dur.status === 'completed') {
@@ -1031,7 +1060,7 @@ export const Query = {
     /**
      * Get seller's currently active product ads
      */
-    getMyActiveProductAds: authenticate(['seller', 'adManager'])(async (_, __, { models, req }) => {
+    getMyActiveProductAds: authenticate(['seller', 'adManager', 'adsAssociate'])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error('Authorization header missing');
@@ -1080,6 +1109,9 @@ export const Query = {
                         remainingDays: remainingDays > 0 ? remainingDays : 0,
                         durationDays: duration.duration_days || 0,
                         totalPrice: duration.total_price || 0,
+                        couponCode: duration.coupon_code || null,
+                        couponDiscountAmount: duration.coupon_discount_amount || 0,
+                        finalPrice: getEffectivePrice(duration),
                         media: media ? {
                             slot: media.slot,
                             mobileImageUrl: media.mobile_image_url || null,
@@ -1100,7 +1132,7 @@ export const Query = {
     /**
      * Get seller's past product ads
      */
-    getMyPastProductAds: authenticate(['seller', 'adManager'])(async (_, __, { models, req }) => {
+    getMyPastProductAds: authenticate(['seller', 'adManager', 'adsAssociate'])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error('Authorization header missing');
@@ -1137,7 +1169,10 @@ export const Query = {
                         endDate: duration.end_date ? new Date(duration.end_date).toISOString() : null,
                         durationDays: duration.duration_days || 0,
                         completedDate: duration.updatedAt ? new Date(duration.updatedAt).toISOString() : null,
-                        totalPrice: duration.total_price || 0
+                        totalPrice: duration.total_price || 0,
+                        couponCode: duration.coupon_code || null,
+                        couponDiscountAmount: duration.coupon_discount_amount || 0,
+                        finalPrice: getEffectivePrice(duration)
                     });
                 }
             }
@@ -1152,7 +1187,7 @@ export const Query = {
     /**
      * Get validity info for seller's active product ads
      */
-    getMyProductAdValidity: authenticate(['seller', 'adManager'])(async (_, __, { models, req }) => {
+    getMyProductAdValidity: authenticate(['seller', 'adManager', 'adsAssociate'])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error('Authorization header missing');

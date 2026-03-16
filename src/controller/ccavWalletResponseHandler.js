@@ -10,12 +10,12 @@ import User from "../models/User.js";
 import { createWalletInvoice } from "../services/walletInvoiceService.js";
 
 // Determine the wallet redirect base path based on the user's role.
-// Ad Managers are redirected to /adManager/wallet, everyone else to /seller/wallet.
+// Ads Associates are redirected to /adsassociate/wallet, everyone else to /seller/wallet.
 async function getWalletPath(sellerId) {
     try {
         const user = await User.findById(sellerId).select("role").lean();
-        if (user && user.role && user.role.includes("adManager")) {
-            return "/adManager/wallet";
+        if (user && user.role && (user.role.includes("adManager") || user.role.includes("adsAssociate"))) {
+            return "/adsassociate/wallet";
         }
     } catch (e) {
         console.error("[getWalletPath] error looking up user role:", e);
@@ -72,7 +72,7 @@ export async function walletRes(request, response) {
                     return resolve();
                 }
 
-                // Determine redirect path based on user role (adManager → /adManager/wallet, else /seller/wallet)
+                // Determine redirect path based on user role (adsAssociate/adManager → /adsassociate/wallet, else /seller/wallet)
                 const walletPath = await getWalletPath(transaction.seller_id);
 
                 if (jsonResponse.order_status === "Success") {

@@ -23,6 +23,34 @@ export const Query = {
   },
 };
 
+const addAdsAssociateRoleToUser = async (models, userID) => {
+  const user = await models.User.findById(userID);
+  if (!user) {
+    return { message: "user not found" };
+  }
+
+  if (!user.role.includes("adsAssociate")) {
+    user.role.push("adsAssociate");
+  }
+  if (!user.role.includes("adManager")) {
+    user.role.push("adManager");
+  }
+
+  await user.save();
+  return { message: "user is now Ads Associate" };
+};
+
+const removeAdsAssociateRoleFromUser = async (models, userID) => {
+  const user = await models.User.findById(userID);
+  if (!user) {
+    return { message: "user not found" };
+  }
+
+  user.role = user.role.filter((item) => item !== "adManager" && item !== "adsAssociate");
+  await user.save();
+  return { message: "user is no longer Ads Associate" };
+};
+
 
 export const Mutation = {
   createStoreFeature: authenticate(["masterAdmin", "admin"])(
@@ -150,15 +178,7 @@ export const Mutation = {
   addAdManagerRole: authenticate(["masterAdmin", "admin"])(
     async (_, { userID }, { models }) => {
       try {
-        const user = await models.User.findById(userID);
-        if (!user) {
-          return { message: "user not found" };
-        }
-        if (!user.role.includes("adManager")) {
-          user.role.push("adManager");
-          await user.save();
-        }
-        return { message: "user is now Ad Manager" };
+        return await addAdsAssociateRoleToUser(models, userID);
       } catch (error) {
         throw new Error(error);
       }
@@ -167,13 +187,25 @@ export const Mutation = {
   removeAdManagerRole: authenticate(["masterAdmin", "admin"])(
     async (_, { userID }, { models }) => {
       try {
-        const user = await models.User.findById(userID);
-        if (!user) {
-          return { message: "user not found" };
-        }
-        user.role = user.role.filter((item) => item !== "adManager");
-        await user.save();
-        return { message: "user is no longer Ad Manager" };
+        return await removeAdsAssociateRoleFromUser(models, userID);
+      } catch (error) {
+        throw new Error(error);
+      }
+    }
+  ),
+  addAdsAssociateRole: authenticate(["masterAdmin", "admin"])(
+    async (_, { userID }, { models }) => {
+      try {
+        return await addAdsAssociateRoleToUser(models, userID);
+      } catch (error) {
+        throw new Error(error);
+      }
+    }
+  ),
+  removeAdsAssociateRole: authenticate(["masterAdmin", "admin"])(
+    async (_, { userID }, { models }) => {
+      try {
+        return await removeAdsAssociateRoleFromUser(models, userID);
       } catch (error) {
         throw new Error(error);
       }

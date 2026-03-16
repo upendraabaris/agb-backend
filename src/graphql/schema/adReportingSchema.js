@@ -192,10 +192,14 @@ export const AdReportingSchema = gql`
     adCount: Int!
     bannerCount: Int!
     stampCount: Int!
+    couponDiscount: Float!
+    netRevenue: Float!
   }
 
   type ProductAdRevenueReport {
     totalRevenue: Float!
+    totalCouponDiscount: Float!
+    totalNetRevenue: Float!
     period: String!
     year: Int!
     month: Int
@@ -210,6 +214,8 @@ export const AdReportingSchema = gql`
     bannerCount: Int!
     stampCount: Int!
     revenue: Float!
+    couponDiscount: Float!
+    netRevenue: Float!
   }
 
   type ProductAdPendingApprovalItem {
@@ -244,6 +250,9 @@ export const AdReportingSchema = gql`
     endDate: String!
     remainingDays: Int!
     totalPrice: Float
+    couponCode: String
+    couponDiscountAmount: Float
+    finalPrice: Float
   }
 
   type ProductAdAdvertiserSpendingReport {
@@ -254,6 +263,7 @@ export const AdReportingSchema = gql`
     adCount: Int!
     activeAdsCount: Int!
     completedAdsCount: Int!
+    totalCouponDiscount: Float!
   }
 
   type SellerActiveProductAdMedia {
@@ -277,6 +287,9 @@ export const AdReportingSchema = gql`
     remainingDays: Int!
     durationDays: Int!
     totalPrice: Float
+    couponCode: String
+    couponDiscountAmount: Float
+    finalPrice: Float
     media: SellerActiveProductAdMedia
   }
 
@@ -294,6 +307,9 @@ export const AdReportingSchema = gql`
     durationDays: Int!
     completedDate: String
     totalPrice: Float
+    couponCode: String
+    couponDiscountAmount: Float
+    finalPrice: Float
   }
 
   type ProductAdValidityInfo {

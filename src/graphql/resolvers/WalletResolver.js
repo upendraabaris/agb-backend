@@ -40,7 +40,7 @@ function generatePayUHash({ txnid, amount, productinfo, firstname, email, key, s
 
 export const Query = {
     // Returns current seller's wallet balance + last 10 transactions
-    getMyWallet: authenticate(["seller", "adManager"])(async (_, __, { models, req }) => {
+    getMyWallet: authenticate(["seller", "adManager", "adsAssociate"])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error("Authorization header missing");
@@ -84,7 +84,7 @@ export const Query = {
     }),
 
     // Paginated transaction history for the logged-in seller
-    getWalletTransactions: authenticate(["seller", "adManager"])(
+    getWalletTransactions: authenticate(["seller", "adManager", "adsAssociate"])(
         async (_, { limit = 20, offset = 0 }, { models, req }) => {
             try {
                 const authHeader = req.headers.authorization;
@@ -116,7 +116,7 @@ export const Query = {
         }
     ),
     // Returns the WalletInvoice for a given successful top-up transaction
-    getWalletInvoice: authenticate(["seller", "adManager"])(
+    getWalletInvoice: authenticate(["seller", "adManager", "adsAssociate"])(
         async (_, { transactionId }, { models, req }) => {
             try {
                 const authHeader = req.headers.authorization;
@@ -169,7 +169,7 @@ export const Query = {
     ),
 
     // Paginated list of all wallet top-up invoices for the logged-in seller
-    getWalletInvoices: authenticate(["seller", "adManager"])(
+    getWalletInvoices: authenticate(["seller", "adManager", "adsAssociate"])(
         async (_, { limit = 20, offset = 0 }, { models, req }) => {
             try {
                 const authHeader = req.headers.authorization;
@@ -223,7 +223,7 @@ export const Query = {
 export const Mutation = {
     // Creates a pending WalletTransaction, generates PayU hash server-side,
     // and returns all fields the frontend needs to POST to PayU.
-    initiateWalletPayment: authenticate(["seller", "adManager"])(
+    initiateWalletPayment: authenticate(["seller", "adManager", "adsAssociate"])(
         async (_, { amount }, { models, req }) => {
             try {
                 const authHeader = req.headers.authorization;
@@ -315,7 +315,7 @@ export const Mutation = {
     ),
 
     // Seller-facing: generate (or return existing) invoice for a single successful top-up.
-    generateWalletInvoice: authenticate(["seller", "adManager"])(
+    generateWalletInvoice: authenticate(["seller", "adManager", "adsAssociate"])(
         async (_, { transactionId }, { models, req }) => {
             try {
                 const authHeader = req.headers.authorization;

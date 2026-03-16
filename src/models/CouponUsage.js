@@ -4,6 +4,7 @@ const CouponUsageSchema = new mongoose.Schema({
   coupon_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CouponCode', required: true },
   user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   category_request_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CategoryRequest' },
+  product_ad_request_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ProductAdRequest' },
   discount_amount: { type: Number, required: true },
 }, { timestamps: true });
 

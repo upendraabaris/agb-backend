@@ -42,6 +42,11 @@ export const ProductAdRequestSchema = gql`
     quarters_covered: [String]
     pricing_breakdown: [ProductAdPricingBreakdown]
     total_price: Float
+    coupon_code: String
+    coupon_discount_type: String
+    coupon_discount_value: Float
+    coupon_discount_amount: Float
+    final_price: Float
     createdAt: String
     updatedAt: String
   }
@@ -176,6 +181,7 @@ export const ProductAdRequestSchema = gql`
     duration_days: Int
     start_preference: String
     selected_quarter: String
+    coupon_code: String
     medias: [ProductAdRequestMediaInput!]!
   }
 

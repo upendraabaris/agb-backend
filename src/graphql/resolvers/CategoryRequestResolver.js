@@ -70,7 +70,7 @@ const DURATION_MAP = {
 
 export const Query = {
   // Get current seller's category requests (uses JWT token from context)
-  getMyAds: authenticate(["seller", "adManager"])(async (_, __, { models, req }) => {
+  getMyAds: authenticate(["seller", "adManager", "adsAssociate"])(async (_, __, { models, req }) => {
     try {
       const authHeader = req.headers.authorization;
       if (!authHeader) throw new Error('Authorization header missing');
@@ -708,7 +708,7 @@ export const Query = {
     }
   },
 
-  getAdRequestsForApproval: authenticate(["admin", "adManager"])(async (_, { status }, { models, req }) => {
+  getAdRequestsForApproval: authenticate(["admin"])(async (_, { status }, { models, req }) => {
     try {
       const query = {};
       // Only filter by status if it's provided and not 'all'
@@ -1034,7 +1034,7 @@ export const Query = {
   }
 };
 export const Mutation = {
-  createCategoryRequest: authenticate(["seller", "adManager"])(
+  createCategoryRequest: authenticate(["seller", "adManager", "adsAssociate"])(
     async (_, { input }, { models, req }) => {
       const session = await mongoose.startSession();
       session.startTransaction();
@@ -1450,7 +1450,7 @@ export const Mutation = {
   },
 
   // Admin approve ad request
-  approveAdRequest: authenticate(["admin", "adManager"])(async (_, { input }, { models, req }) => {
+  approveAdRequest: authenticate(["admin", "adManager", "adsAssociate"])(async (_, { input }, { models, req }) => {
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
@@ -1579,7 +1579,7 @@ export const Mutation = {
   }),
 
   // Admin reject ad request
-  rejectAdRequest: authenticate(["admin", "adManager"])(async (_, { input }, { models, req }) => {
+  rejectAdRequest: authenticate(["admin", "adManager", "adsAssociate"])(async (_, { input }, { models, req }) => {
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
