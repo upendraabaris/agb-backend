@@ -23,9 +23,17 @@ const requireAuth = async (context, roles = []) => {
       throw new Error("User not found");
     }
 
+    const userRoles = Array.isArray(user.role) ? [...user.role] : [];
+    if (userRoles.includes("adManager") && !userRoles.includes("adsAssociate")) {
+      userRoles.push("adsAssociate");
+    }
+    if (userRoles.includes("adsAssociate") && !userRoles.includes("adManager")) {
+      userRoles.push("adManager");
+    }
+
     // This is a new block of code. It checks if the authenticated user's role is in the allowed roles array.
 
-    if (roles.length && !roles.some((role) => user.role.includes(role))) {
+    if (roles.length && !roles.some((role) => userRoles.includes(role))) {
       throw new Error("Unauthorized");
     }
 

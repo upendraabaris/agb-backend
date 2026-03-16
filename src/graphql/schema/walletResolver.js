@@ -13,7 +13,7 @@ function generatePayUHash({ txnid, amount, productinfo, firstname, email, key, s
 
 export const Query = {
     // Returns current seller's wallet balance + last 10 transactions
-    getMyWallet: authenticate(["seller"])(async (_, __, { models, req }) => {
+    getMyWallet: authenticate(["seller", "adManager"])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error("Authorization header missing");
@@ -56,7 +56,7 @@ export const Query = {
     }),
 
     // Paginated transaction history for the logged-in seller
-    getWalletTransactions: authenticate(["seller"])(
+    getWalletTransactions: authenticate(["seller", "adManager"])(
         async (_, { limit = 20, offset = 0 }, { models, req }) => {
             try {
                 const authHeader = req.headers.authorization;
@@ -91,7 +91,7 @@ export const Query = {
 export const Mutation = {
     // Creates a pending WalletTransaction, generates PayU hash server-side,
     // and returns all fields the frontend needs to POST to PayU.
-    initiateWalletPayment: authenticate(["seller"])(
+    initiateWalletPayment: authenticate(["seller", "adManager"])(
         async (_, { amount }, { models, req }) => {
             try {
                 const authHeader = req.headers.authorization;

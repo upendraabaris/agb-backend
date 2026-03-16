@@ -4,6 +4,7 @@ import authenticate from '../../middlewares/auth.js';
 import AdPricingConfig from '../../models/AdPricingConfig.js';
 import SellerWallet from '../../models/SellerWallet.js';
 import WalletTransaction from '../../models/WalletTransaction.js';
+import CouponUsage from '../../models/CouponUsage.js';
 
 // Build full image URL from relative path (e.g. "uploads/img.jpg" → "http://localhost:4000/uploads/img.jpg")
 const getFullImageUrl = (relativePath) => {
@@ -126,7 +127,7 @@ const resolveStartDate = (start_preference, selected_quarter, next4Quarters) => 
 export const Query = {
     // ─── SELLER ────────────────────────────────────────────────────────────────
     // Get authenticated seller's own product ad requests
-    getMyProductAds: authenticate(['seller'])(async (_, __, { models, req }) => {
+    getMyProductAds: authenticate(['seller', 'adManager', 'adsAssociate'])(async (_, __, { models, req }) => {
         try {
             const token = req.headers.authorization?.split(' ')[1];
             if (!token) throw new Error('Token missing');
@@ -207,7 +208,12 @@ export const Query = {
                                 rate_per_day: b.rate_per_day,
                                 subtotal: b.subtotal
                             })),
-                            total_price: d.total_price || 0
+                            total_price: d.total_price || 0,
+                            coupon_code: d.coupon_code || null,
+                            coupon_discount_type: d.coupon_discount_type || null,
+                            coupon_discount_value: d.coupon_discount_value || 0,
+                            coupon_discount_amount: d.coupon_discount_amount || 0,
+                            final_price: d.final_price != null ? d.final_price : (d.total_price || 0)
                         }))
                     };
                 })
@@ -305,7 +311,12 @@ export const Query = {
                                 rate_per_day: b.rate_per_day,
                                 subtotal: b.subtotal
                             })),
-                            total_price: d.total_price || 0
+                            total_price: d.total_price || 0,
+                            coupon_code: d.coupon_code || null,
+                            coupon_discount_type: d.coupon_discount_type || null,
+                            coupon_discount_value: d.coupon_discount_value || 0,
+                            coupon_discount_amount: d.coupon_discount_amount || 0,
+                            final_price: d.final_price != null ? d.final_price : (d.total_price || 0)
                         })),
                         createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : null,
                         updatedAt: r.updatedAt ? new Date(r.updatedAt).toISOString() : null
@@ -713,7 +724,7 @@ async function _getRunningProductAds(models, slotRegex) {
 // ─── MUTATIONS ──────────────────────────────────────────────────────────────
 export const Mutation = {
     // Seller creates a product ad request
-    createProductAdRequest: authenticate(['seller'])(
+    createProductAdRequest: authenticate(['seller', 'adManager', 'adsAssociate'])(
         async (_, { input }, { models, req }) => {
             const session = await mongoose.startSession();
             session.startTransaction();
@@ -959,9 +970,75 @@ export const Mutation = {
                         selected_quarter: input.selected_quarter || null,
                         quarters_covered: quartersCovered,
                         pricing_breakdown: pricingBreakdown,
-                        total_price: finalPrice,
+                            total_price: finalPrice,
+                            coupon_code: null,
+                            coupon_discount_type: null,
+                            coupon_discount_value: 0,
+                            coupon_discount_amount: 0,
+                            final_price: finalPrice,
                     };
                 });
+
+                // ─── Coupon validation & discount distribution (same as category ads) ───
+                if (input.coupon_code) {
+                    const coupon = await models.CouponCode.findOne({ couponCode: input.coupon_code });
+                    let couponValid = false;
+                    let couponError = '';
+
+                    if (!coupon) {
+                        couponError = 'Coupon code not found';
+                    } else if (!coupon.active) {
+                        couponError = 'Coupon is not active';
+                    } else if (coupon.couponType !== 'ad') {
+                        couponError = 'Coupon is not valid for advertisements';
+                    } else {
+                        const todayStr = new Date().toISOString().split('T')[0];
+                        if (coupon.start && todayStr < coupon.start) {
+                            couponError = 'Coupon is not yet active';
+                        } else if (coupon.end && todayStr > coupon.end) {
+                            couponError = 'Coupon has expired';
+                        } else if (coupon.maxUses !== null && coupon.maxUses !== undefined && coupon.usedCount >= coupon.maxUses) {
+                            couponError = 'Coupon has reached its usage limit';
+                        } else {
+                            const userUsageCount = await CouponUsage.countDocuments({ coupon_id: coupon._id, user_id: sellerId });
+                            if (coupon.perUserLimit && userUsageCount >= coupon.perUserLimit) {
+                                couponError = `You have already used this coupon ${userUsageCount} time(s)`;
+                            } else {
+                                couponValid = true;
+                            }
+                        }
+                    }
+
+                    if (!couponValid) {
+                        throw new Error(couponError);
+                    }
+
+                    const totalOrderAmount = durations.reduce((sum, d) => sum + (d.total_price || 0), 0);
+                    if (coupon.minOrderAmount && totalOrderAmount < coupon.minOrderAmount) {
+                        throw new Error(`Minimum order amount for this coupon is ₹${coupon.minOrderAmount}`);
+                    }
+
+                    let totalDiscount = 0;
+                    if (coupon.discountType === 'flat') {
+                        totalDiscount = Math.min(coupon.discount, totalOrderAmount);
+                    } else {
+                        totalDiscount = Math.round((coupon.discount / 100) * totalOrderAmount);
+                    }
+                    totalDiscount = Math.max(0, totalDiscount);
+
+                    durations.forEach((d) => {
+                        const proportion = totalOrderAmount > 0 ? (d.total_price || 0) / totalOrderAmount : 0;
+                        const slotDiscount = Math.round(totalDiscount * proportion);
+                        d.coupon_code = coupon.couponCode;
+                        d.coupon_discount_type = coupon.discountType;
+                        d.coupon_discount_value = coupon.discount;
+                        d.coupon_discount_amount = slotDiscount;
+                        d.final_price = Math.max(0, (d.total_price || 0) - slotDiscount);
+                    });
+
+                    console.log('[createProductAdRequest] Coupon applied:', coupon.couponCode, 'Total discount:', totalDiscount);
+                }
+
                 await models.ProductAdRequestDuration.insertMany(durations, { session });
 
                 await session.commitTransaction();
@@ -1001,6 +1078,9 @@ export const Mutation = {
 
                 const durationDays = firstDuration?.duration_days || 90;
                 const selectedQuarter = firstDuration?.selected_quarter || null;
+                const appliedCouponCode = firstDuration?.coupon_code || null;
+                const appliedCouponType = firstDuration?.coupon_discount_type || null;
+                const appliedCouponValue = firstDuration?.coupon_discount_value || 0;
 
                 // Determine actual start date:
                 // Prefer admin-provided start_date, fall back to stored intended start
@@ -1022,7 +1102,7 @@ export const Mutation = {
                 // This way, if Q2 was booked but admin starts May 1, ad runs May 1–Jun 30 (61 days)
                 // and the seller is charged for exactly those 61 days.
                 let endDateObj;
-                let totalCost;
+                let totalGrossCost;
                 const updatedSlotPrices = {}; // durId → { price, days }
 
                 if (selectedQuarter && start_date) {
@@ -1061,12 +1141,12 @@ export const Mutation = {
                         updatedSlotPrices[dur._id.toString()] = { price: proRatedPrice, days: actualDays };
                         costAccum += proRatedPrice;
                     }
-                    totalCost = costAccum;
+                    totalGrossCost = costAccum;
 
                 } else if (firstDuration?.end_date && !start_date) {
                     // Admin did NOT override start → use stored intended end date and price
                     endDateObj = new Date(firstDuration.end_date);
-                    totalCost = allDurations.reduce((sum, d) => sum + (d.total_price || 0), 0);
+                    totalGrossCost = allDurations.reduce((sum, d) => sum + (d.total_price || 0), 0);
 
                     // Validate quarter if applicable (for logged history)
                     if (selectedQuarter) {
@@ -1087,14 +1167,63 @@ export const Mutation = {
                     // Old record (no selected_quarter) — keep current behaviour (start + durationDays)
                     endDateObj = new Date(startDateObj);
                     endDateObj.setUTCDate(endDateObj.getUTCDate() + durationDays - 1);
-                    totalCost = allDurations.reduce((sum, d) => sum + (d.total_price || 0), 0);
+                    totalGrossCost = allDurations.reduce((sum, d) => sum + (d.total_price || 0), 0);
                 }
 
-                console.log('[approveProductAdRequest] Total ad cost:', totalCost);
+                // Compute coupon discount and payable amount (net)
+                const updatedSlotDiscounts = {}; // durId -> discount amount
+                if (appliedCouponCode && appliedCouponType && appliedCouponValue > 0) {
+                    let recomputedDiscount = 0;
+                    if (appliedCouponType === 'flat') {
+                        recomputedDiscount = Math.min(appliedCouponValue, totalGrossCost);
+                    } else {
+                        recomputedDiscount = Math.round((appliedCouponValue / 100) * totalGrossCost);
+                    }
+                    recomputedDiscount = Math.max(0, recomputedDiscount);
+
+                    allDurations.forEach((dur) => {
+                        const slotPrice = updatedSlotPrices[dur._id.toString()]?.price ?? (dur.total_price || 0);
+                        const proportion = totalGrossCost > 0 ? slotPrice / totalGrossCost : 0;
+                        updatedSlotDiscounts[dur._id.toString()] = Math.round(recomputedDiscount * proportion);
+                    });
+                }
+
+                let totalCouponDiscount = 0;
+                let totalDeduction = 0;
+                allDurations.forEach((dur) => {
+                    const slotPrice = updatedSlotPrices[dur._id.toString()]?.price ?? (dur.total_price || 0);
+                    const slotDiscount = Object.prototype.hasOwnProperty.call(updatedSlotDiscounts, dur._id.toString())
+                        ? (updatedSlotDiscounts[dur._id.toString()] || 0)
+                        : (dur.coupon_discount_amount || 0);
+                    const slotFinal = (dur.final_price != null && !Object.prototype.hasOwnProperty.call(updatedSlotDiscounts, dur._id.toString()))
+                        ? dur.final_price
+                        : Math.max(0, slotPrice - slotDiscount);
+                    totalCouponDiscount += slotDiscount;
+                    totalDeduction += slotFinal;
+                });
+
+                console.log(
+                    '[approveProductAdRequest] Total gross:',
+                    totalGrossCost,
+                    'Coupon discount:',
+                    totalCouponDiscount,
+                    'Payable:',
+                    totalDeduction,
+                    'Coupon:',
+                    appliedCouponCode
+                );
 
                 // ── Update all duration entries (status, dates, and recalculated price if applicable) ──
                 for (const dur of allDurations) {
                     const reCalc = updatedSlotPrices[dur._id.toString()];
+                    const slotPrice = reCalc?.price ?? (dur.total_price || 0);
+                    const hasUpdatedDiscount = Object.prototype.hasOwnProperty.call(updatedSlotDiscounts, dur._id.toString());
+                    const slotDiscount = Object.prototype.hasOwnProperty.call(updatedSlotDiscounts, dur._id.toString())
+                        ? (updatedSlotDiscounts[dur._id.toString()] || 0)
+                        : (dur.coupon_discount_amount || 0);
+                    const slotFinal = (dur.final_price != null && !hasUpdatedDiscount)
+                        ? dur.final_price
+                        : Math.max(0, slotPrice - slotDiscount);
                     await models.ProductAdRequestDuration.findByIdAndUpdate(
                         dur._id,
                         {
@@ -1102,6 +1231,8 @@ export const Mutation = {
                                 status: 'approved',
                                 start_date: startDateObj,
                                 end_date: endDateObj,
+                                coupon_discount_amount: slotDiscount,
+                                final_price: slotFinal,
                                 ...(reCalc ? { total_price: reCalc.price, duration_days: reCalc.days } : {}),
                             }
                         },
@@ -1115,45 +1246,65 @@ export const Mutation = {
                 if (!wallet) {
                     wallet = (await SellerWallet.create([{ seller_id: sellerId, balance: 0 }], { session }))[0];
                 }
-                if (wallet.balance < totalCost) {
+                if (wallet.balance < totalDeduction) {
                     throw new Error(
-                        `Insufficient wallet balance. Seller has ₹${wallet.balance} but ₹${totalCost} is required.`
+                        `Insufficient wallet balance. Seller has ₹${wallet.balance} but ₹${totalDeduction} is required.`
                     );
                 }
 
-                // ── Deduct from wallet ──
-                wallet.balance -= totalCost;
+                // ── Deduct from wallet (net amount after coupon) ──
+                wallet.balance -= totalDeduction;
                 await wallet.save({ session });
                 console.log('[approveProductAdRequest] Wallet deducted. New balance:', wallet.balance);
 
                 // ── Create debit transaction record ──
                 const productName = adRequest.product_id?.fullName || adRequest.product_id?.previewName || 'Unknown';
                 const slotNames = allDurations.map(d => d.slot).join(', ');
+                const couponDesc = appliedCouponCode ? ` | Coupon: ${appliedCouponCode} (-₹${totalCouponDiscount})` : '';
                 await WalletTransaction.create([{
                     seller_id: sellerId,
                     type: 'debit',
-                    amount: totalCost,
+                    amount: totalDeduction,
                     source: 'ad_deduction',
-                    description: `Product ad approved for ${productName} (${slotNames})`,
+                    description: `Product ad approved for ${productName} (${slotNames})${couponDesc}`,
                     status: 'success',
                 }], { session });
 
                 console.log('[approveProductAdRequest] Wallet transaction created');
 
+                // ── Coupon usage tracking ──
+                if (appliedCouponCode) {
+                    const coupon = await models.CouponCode.findOne({ couponCode: appliedCouponCode });
+                    if (coupon) {
+                        await models.CouponCode.updateOne(
+                            { _id: coupon._id },
+                            { $inc: { usedCount: 1 } },
+                            { session }
+                        );
+                        await CouponUsage.create([{
+                            coupon_id: coupon._id,
+                            user_id: sellerId,
+                            product_ad_request_id: requestId,
+                            discount_amount: totalCouponDiscount,
+                        }], { session });
+                        console.log('[approveProductAdRequest] CouponUsage recorded for coupon:', appliedCouponCode);
+                    }
+                }
+
                 // ── Update request status + total_cost ──
                 adRequest.status = 'approved';
                 adRequest.approved_date = new Date();
-                adRequest.total_cost = totalCost;
+                adRequest.total_cost = totalDeduction;
                 await adRequest.save({ session });
 
                 await session.commitTransaction();
                 session.endSession();
 
-                console.log('[approveProductAdRequest] Approved request:', requestId, '— Deducted ₹' + totalCost);
+                console.log('[approveProductAdRequest] Approved request:', requestId, '— Deducted ₹' + totalDeduction);
 
                 return {
                     success: true,
-                    message: `Product ad approved. ₹${totalCost} deducted from seller wallet.`,
+                    message: `Product ad approved. ₹${totalDeduction} deducted from seller wallet.`,
                     data: adRequest
                 };
             } catch (err) {
