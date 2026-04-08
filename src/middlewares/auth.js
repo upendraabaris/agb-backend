@@ -30,6 +30,9 @@ const requireAuth = async (context, roles = []) => {
     if (userRoles.includes("adsAssociate") && !userRoles.includes("adManager")) {
       userRoles.push("adManager");
     }
+    if (userRoles.includes("superSeller") && !userRoles.includes("superSeller")) {
+      userRoles.push("superSeller");
+    }
 
     // This is a new block of code. It checks if the authenticated user's role is in the allowed roles array.
 

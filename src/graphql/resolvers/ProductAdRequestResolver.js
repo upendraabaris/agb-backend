@@ -127,7 +127,7 @@ const resolveStartDate = (start_preference, selected_quarter, next4Quarters) => 
 export const Query = {
     // ─── SELLER ────────────────────────────────────────────────────────────────
     // Get authenticated seller's own product ad requests
-    getMyProductAds: authenticate(['seller', 'adManager', 'adsAssociate'])(async (_, __, { models, req }) => {
+    getMyProductAds: authenticate(['seller', 'adManager', 'adsAssociate','superSeller'])(async (_, __, { models, req }) => {
         try {
             const token = req.headers.authorization?.split(' ')[1];
             if (!token) throw new Error('Token missing');
