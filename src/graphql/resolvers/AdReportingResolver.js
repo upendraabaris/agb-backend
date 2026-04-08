@@ -525,7 +525,7 @@ export const Query = {
     /**
      * Get seller's currently active ads
      */
-    getMyActiveAds: authenticate(['seller', 'adManager', 'adsAssociate'])(async (_, __, { models, req }) => {
+    getMyActiveAds: authenticate(['seller', 'adManager', 'adsAssociate', 'superSeller'])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error('Authorization header missing');
@@ -604,7 +604,7 @@ export const Query = {
     /**
      * Get seller's past ads
      */
-    getMyPastAds: authenticate(['seller', 'adManager', 'adsAssociate'])(async (_, __, { models, req }) => {
+    getMyPastAds: authenticate(['seller', 'adManager', 'adsAssociate','superSeller'])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error('Authorization header missing');
@@ -668,7 +668,7 @@ export const Query = {
     /**
      * Get validity info for seller's active ads
      */
-    getMyAdValidity: authenticate(['seller', 'adManager', 'adsAssociate'])(async (_, __, { models, req }) => {
+    getMyAdValidity: authenticate(['seller', 'adManager', 'adsAssociate','superSeller'])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error('Authorization header missing');
@@ -1060,7 +1060,7 @@ export const Query = {
     /**
      * Get seller's currently active product ads
      */
-    getMyActiveProductAds: authenticate(['seller', 'adManager', 'adsAssociate'])(async (_, __, { models, req }) => {
+    getMyActiveProductAds: authenticate(['seller', 'adManager', 'adsAssociate','superSeller'])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error('Authorization header missing');
@@ -1132,7 +1132,7 @@ export const Query = {
     /**
      * Get seller's past product ads
      */
-    getMyPastProductAds: authenticate(['seller', 'adManager', 'adsAssociate'])(async (_, __, { models, req }) => {
+    getMyPastProductAds: authenticate(['seller', 'adManager', 'adsAssociate','superSeller'])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error('Authorization header missing');
@@ -1187,7 +1187,7 @@ export const Query = {
     /**
      * Get validity info for seller's active product ads
      */
-    getMyProductAdValidity: authenticate(['seller', 'adManager', 'adsAssociate'])(async (_, __, { models, req }) => {
+    getMyProductAdValidity: authenticate(['seller', 'adManager', 'adsAssociate','superSeller'])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error('Authorization header missing');

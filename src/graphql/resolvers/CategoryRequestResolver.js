@@ -70,7 +70,7 @@ const DURATION_MAP = {
 
 export const Query = {
   // Get current seller's category requests (uses JWT token from context)
-  getMyAds: authenticate(["seller", "adManager", "adsAssociate"])(async (_, __, { models, req }) => {
+  getMyAds: authenticate(["seller", "adManager", "adsAssociate","superSeller"])(async (_, __, { models, req }) => {
     try {
       const authHeader = req.headers.authorization;
       if (!authHeader) throw new Error('Authorization header missing');
