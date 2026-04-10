@@ -11,6 +11,7 @@ export const AdTierMasterType = gql`
   }
 
   input AdTierMasterInput {
+    id: ID
     name: String!
     description: String!
     is_active: Boolean

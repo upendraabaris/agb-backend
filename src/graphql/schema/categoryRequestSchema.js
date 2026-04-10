@@ -111,6 +111,9 @@ export const CategoryRequestSchema = gql`
     seller_id: ID!
     sellerName: String
     sellerEmail: String
+    sellerCompanyName: String
+    sellerBusinessEmail: String
+    sellerBusinessPhone: String
     category_id: ID!
     categoryName: String
     tier_id: ID!

@@ -96,6 +96,9 @@ export const ProductAdRequestSchema = gql`
     seller_id: ID!
     sellerName: String
     sellerEmail: String
+    sellerCompanyName: String
+    sellerBusinessEmail: String
+    sellerBusinessPhone: String
     product_id: ID!
     productName: String
     brandName: String

@@ -127,7 +127,7 @@ const resolveStartDate = (start_preference, selected_quarter, next4Quarters) => 
 export const Query = {
     // ─── SELLER ────────────────────────────────────────────────────────────────
     // Get authenticated seller's own product ad requests
-    getMyProductAds: authenticate(['seller', 'adManager', 'adsAssociate','superSeller'])(async (_, __, { models, req }) => {
+    getMyProductAds: authenticate(['seller', 'adManager', 'adsAssociate', 'superSeller'])(async (_, __, { models, req }) => {
         try {
             const token = req.headers.authorization?.split(' ')[1];
             if (!token) throw new Error('Token missing');
@@ -232,7 +232,15 @@ export const Query = {
             if (status && status !== 'all') query.status = status;
 
             const requests = await models.ProductAdRequest.find(query)
-                .populate('seller_id', 'first_name last_name email')
+                // .populate('seller_id', 'first_name last_name email')
+                .populate({
+                    path: 'seller_id',
+                    select: 'firstName lastName email',
+                    populate: {
+                        path: 'seller',
+                        select: 'companyName email mobileNo'
+                    }
+                })
                 .populate('product_id', 'fullName brand_name previewName thumbnail')
                 .populate('tier_id', '_id')
                 .lean()
@@ -269,7 +277,7 @@ export const Query = {
 
                     const product = r.product_id;
                     const sellerName = r.seller_id
-                        ? `${r.seller_id.first_name || ''} ${r.seller_id.last_name || ''}`.trim()
+                        ? `${r.seller_id.firstName || ''} ${r.seller_id.lastName || ''}`.trim()
                         : 'Unknown Seller';
 
                     return {
@@ -277,6 +285,9 @@ export const Query = {
                         seller_id: r.seller_id?._id?.toString(),
                         sellerName,
                         sellerEmail: r.seller_id?.email || 'N/A',
+                        sellerCompanyName: r.seller_id?.seller?.companyName || 'N/A',
+                        sellerBusinessEmail: r.seller_id?.seller?.email || 'N/A',
+                        sellerBusinessPhone: r.seller_id?.seller?.mobileNo || 'N/A',
                         product_id: product?._id?.toString(),
                         productName: product?.fullName || product?.previewName || 'Unknown',
                         brandName: product?.brand_name || null,
@@ -863,8 +874,8 @@ export const Mutation = {
                     // External URL surcharge (flat fee per ad type set by admin)
                     const slotAdType = m.slot ? m.slot.split('_')[0] : 'banner';
                     const externalSurcharge = (m.url_type === 'external')
-                      ? (slotAdType === 'stamp' ? (pricingConfig.stamp_external_url_extra_cost || 0) : (pricingConfig.banner_external_url_extra_cost || 0))
-                      : 0;
+                        ? (slotAdType === 'stamp' ? (pricingConfig.stamp_external_url_extra_cost || 0) : (pricingConfig.banner_external_url_extra_cost || 0))
+                        : 0;
 
                     let durStart, durEnd;
                     const segments = [];
@@ -970,12 +981,12 @@ export const Mutation = {
                         selected_quarter: input.selected_quarter || null,
                         quarters_covered: quartersCovered,
                         pricing_breakdown: pricingBreakdown,
-                            total_price: finalPrice,
-                            coupon_code: null,
-                            coupon_discount_type: null,
-                            coupon_discount_value: 0,
-                            coupon_discount_amount: 0,
-                            final_price: finalPrice,
+                        total_price: finalPrice,
+                        coupon_code: null,
+                        coupon_discount_type: null,
+                        coupon_discount_value: 0,
+                        coupon_discount_amount: 0,
+                        final_price: finalPrice,
                     };
                 });
 

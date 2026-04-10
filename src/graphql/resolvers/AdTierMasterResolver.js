@@ -3,13 +3,13 @@ import authenticate from "../../middlewares/auth.js";
 export const Query = {
   adTierMasters: async (_, __, { models }) => {
     try {
-      return await models.AdTierMaster.find({ is_active: true }).sort({ name: 1 });
+      return await models.AdTierMaster.find().sort({ name: 1 });
     } catch (error) {
       throw new Error(`Failed to fetch tier masters: ${error.message}`);
     }
   },
 
-  allAdTierMasters: authenticate(["admin"]) (async (_, __, { models }) => {
+  allAdTierMasters: authenticate(["admin"])(async (_, __, { models }) => {
     try {
       return await models.AdTierMaster.find().sort({ name: 1 });
     } catch (error) {
@@ -39,7 +39,7 @@ export const Query = {
 };
 
 export const Mutation = {
-  createAdTierMaster: authenticate(["admin"]) (
+  createAdTierMaster: authenticate(["admin"])(
     async (_, { input }, { models }) => {
       try {
         const existing = await models.AdTierMaster.findOne({ name: input.name });
@@ -52,7 +52,7 @@ export const Mutation = {
     }
   ),
 
-  updateAdTierMaster: authenticate(["admin"]) (
+  updateAdTierMaster: authenticate(["admin"])(
     async (_, { id, input }, { models }) => {
       try {
         const existing = await models.AdTierMaster.findById(id);
@@ -69,7 +69,7 @@ export const Mutation = {
     }
   ),
 
-  deleteAdTierMaster: authenticate(["admin"]) (
+  deleteAdTierMaster: authenticate(["admin"])(
     async (_, { id }, { models }) => {
       try {
         const deleted = await models.AdTierMaster.findByIdAndDelete(id);
@@ -81,7 +81,7 @@ export const Mutation = {
     }
   ),
 
-  toggleAdTierMasterStatus: authenticate(["admin"]) (
+  toggleAdTierMasterStatus: authenticate(["admin"])(
     async (_, { id }, { models }) => {
       try {
         const item = await models.AdTierMaster.findById(id);

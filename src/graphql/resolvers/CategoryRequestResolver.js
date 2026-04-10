@@ -63,14 +63,14 @@ const getSlotPriceFromConfig = async (tierId, slotName, durationKey = 'quarterly
 
 // ─── HELPER: Map duration_type to days and config key ───────────────────────
 const DURATION_MAP = {
-  quarterly:   { days: 90,  quarters: 1, configKey: 'quarterly' },
+  quarterly: { days: 90, quarters: 1, configKey: 'quarterly' },
   half_yearly: { days: 180, quarters: 2, configKey: 'half_yearly' },
-  yearly:      { days: 360, quarters: 4, configKey: 'yearly' },
+  yearly: { days: 360, quarters: 4, configKey: 'yearly' },
 };
 
 export const Query = {
   // Get current seller's category requests (uses JWT token from context)
-  getMyAds: authenticate(["seller", "adManager", "adsAssociate","superSeller"])(async (_, __, { models, req }) => {
+  getMyAds: authenticate(["seller", "adManager", "adsAssociate", "superSeller"])(async (_, __, { models, req }) => {
     try {
       const authHeader = req.headers.authorization;
       if (!authHeader) throw new Error('Authorization header missing');
@@ -410,10 +410,10 @@ export const Query = {
       const getQuarterEnd = (date) => {
         const m = date.getUTCMonth() + 1;
         const year = date.getUTCFullYear();
-        if (m >= 1 && m <= 3) return new Date(Date.UTC(year, 2, 31, 23,59,59,999));
-        if (m >= 4 && m <= 6) return new Date(Date.UTC(year, 5, 30, 23,59,59,999));
-        if (m >= 7 && m <= 9) return new Date(Date.UTC(year, 8, 30, 23,59,59,999));
-        return new Date(Date.UTC(year, 11, 31, 23,59,59,999));
+        if (m >= 1 && m <= 3) return new Date(Date.UTC(year, 2, 31, 23, 59, 59, 999));
+        if (m >= 4 && m <= 6) return new Date(Date.UTC(year, 5, 30, 23, 59, 59, 999));
+        if (m >= 7 && m <= 9) return new Date(Date.UTC(year, 8, 30, 23, 59, 59, 999));
+        return new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
       };
       const addDays = (date, days) => {
         const d = new Date(date);
@@ -437,16 +437,16 @@ export const Query = {
           const quarterEnd = getQuarterEnd(current);
           const msPerDay = 24 * 60 * 60 * 1000;
           const diff = Math.floor(
-            (Date.UTC(quarterEnd.getUTCFullYear(), quarterEnd.getUTCMonth(), quarterEnd.getUTCDate()) - 
-             Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate())) / msPerDay
+            (Date.UTC(quarterEnd.getUTCFullYear(), quarterEnd.getUTCMonth(), quarterEnd.getUTCDate()) -
+              Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate())) / msPerDay
           ) + 1;
           const take = Math.min(diff, remaining);
           const segmentEnd = addDays(current, take - 1);
-          segments.push({ 
-            quarter: getQuarterLabel(current), 
+          segments.push({
+            quarter: getQuarterLabel(current),
             start: new Date(current),
             end: segmentEnd,
-            days: take 
+            days: take
           });
           current = addDays(current, take);
           remaining -= take;
@@ -456,7 +456,7 @@ export const Query = {
 
       // compute quarters this request will cover based on start preference
       const candidateDays = durations[0]?.duration_days || 30;
-      
+
       let candidateSegments = [];
       if (pref === 'next_quarter') {
         const nextQStart = getNextQuarterStart(startDate);
@@ -467,22 +467,22 @@ export const Query = {
         const currentQEnd = getQuarterEnd(startUTC);
         const msPerDay = 24 * 60 * 60 * 1000;
         const remainingInCurrentQ = Math.floor(
-          (Date.UTC(currentQEnd.getUTCFullYear(), currentQEnd.getUTCMonth(), currentQEnd.getUTCDate()) - 
-           Date.UTC(startUTC.getUTCFullYear(), startUTC.getUTCMonth(), startUTC.getUTCDate())) / msPerDay
+          (Date.UTC(currentQEnd.getUTCFullYear(), currentQEnd.getUTCMonth(), currentQEnd.getUTCDate()) -
+            Date.UTC(startUTC.getUTCFullYear(), startUTC.getUTCMonth(), startUTC.getUTCDate())) / msPerDay
         ) + 1;
-        
+
         candidateSegments.push({
           quarter: getQuarterLabel(startUTC),
           start: new Date(startUTC),
           end: currentQEnd,
           days: remainingInCurrentQ
         });
-        
+
         const nextQStart = getNextQuarterStart(startUTC);
         const nextQSegs = splitIntervalByQuarter(nextQStart, candidateDays);
         candidateSegments.push(...nextQSegs);
       }
-      
+
       const candidateQuarters = candidateSegments.map(s => s.quarter);
       const totalCandidateDays = candidateSegments.reduce((sum, s) => sum + s.days, 0);
       const candidateEndDate = candidateSegments[candidateSegments.length - 1]?.end || startDate;
@@ -553,9 +553,9 @@ export const Query = {
       pricingConfig.generated_prices.forEach(gp => {
         const priority = gp.ad_type === 'banner' ? gp.slot_position : gp.slot_position + 4;
         adCategories.push(
-          { id: `${configId}_${gp.slot_name}_q`, ad_type: gp.ad_type, slot_name: gp.slot_name, slot_position: gp.slot_position, price: gp.quarterly,    priority, duration_days: 90 },
-          { id: `${configId}_${gp.slot_name}_h`, ad_type: gp.ad_type, slot_name: gp.slot_name, slot_position: gp.slot_position, price: gp.half_yearly,  priority, duration_days: 180 },
-          { id: `${configId}_${gp.slot_name}_y`, ad_type: gp.ad_type, slot_name: gp.slot_name, slot_position: gp.slot_position, price: gp.yearly,       priority, duration_days: 360 }
+          { id: `${configId}_${gp.slot_name}_q`, ad_type: gp.ad_type, slot_name: gp.slot_name, slot_position: gp.slot_position, price: gp.quarterly, priority, duration_days: 90 },
+          { id: `${configId}_${gp.slot_name}_h`, ad_type: gp.ad_type, slot_name: gp.slot_name, slot_position: gp.slot_position, price: gp.half_yearly, priority, duration_days: 180 },
+          { id: `${configId}_${gp.slot_name}_y`, ad_type: gp.ad_type, slot_name: gp.slot_name, slot_position: gp.slot_position, price: gp.yearly, priority, duration_days: 360 }
         );
       });
 
@@ -718,7 +718,15 @@ export const Query = {
 
       // Fetch requests with seller and category details
       const requests = await models.CategoryRequest.find(query)
-        .populate('seller_id', 'firstName lastName email')
+        // .populate('seller_id', 'firstName lastName email companyName businessEmail businessPhone')
+        .populate({
+          path: 'seller_id',
+          select: 'firstName lastName email',
+          populate: {
+            path: 'seller',
+            select: 'companyName email mobileNo'
+          }
+        })
         .populate('category_id', 'name')
         .populate('tier_id', '_id')
         .lean()
@@ -777,6 +785,9 @@ export const Query = {
             seller_id: req.seller_id?._id?.toString(),
             sellerName,
             sellerEmail: req.seller_id?.email || 'N/A',
+            sellerCompanyName: req.seller_id?.seller?.companyName || 'N/A',
+            sellerBusinessEmail: req.seller_id?.seller?.email || 'N/A',
+            sellerBusinessPhone: req.seller_id?.seller?.mobileNo || 'N/A',
             category_id: req.category_id?._id?.toString(),
             categoryName: req.category_id?.name || 'Unknown',
             tier_id: tierId,
@@ -1171,10 +1182,10 @@ export const Mutation = {
         const getQuarterEnd = (date) => {
           const m = date.getUTCMonth() + 1;
           const year = date.getUTCFullYear();
-          if (m >= 1 && m <= 3) return new Date(Date.UTC(year, 2, 31, 23,59,59,999));
-          if (m >= 4 && m <= 6) return new Date(Date.UTC(year, 5, 30, 23,59,59,999));
-          if (m >= 7 && m <= 9) return new Date(Date.UTC(year, 8, 30, 23,59,59,999));
-          return new Date(Date.UTC(year, 11, 31, 23,59,59,999));
+          if (m >= 1 && m <= 3) return new Date(Date.UTC(year, 2, 31, 23, 59, 59, 999));
+          if (m >= 4 && m <= 6) return new Date(Date.UTC(year, 5, 30, 23, 59, 59, 999));
+          if (m >= 7 && m <= 9) return new Date(Date.UTC(year, 8, 30, 23, 59, 59, 999));
+          return new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
         };
         const addQuarters = (startDate, numQuarters) => {
           // Returns the end of the Nth quarter from startDate
@@ -1231,7 +1242,7 @@ export const Mutation = {
                 quarter: getQuarterLabel(cursor),
                 start: new Date(cursor),
                 end: qEnd,
-                days: Math.floor((qEnd - cursor) / (24*60*60*1000)) + 1
+                days: Math.floor((qEnd - cursor) / (24 * 60 * 60 * 1000)) + 1
               });
               cursor = getNextQuarterStart(cursor);
             }
@@ -1241,12 +1252,12 @@ export const Mutation = {
             // then N full quarters from next quarter at full selected duration price
             const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
             const currentQEnd = getQuarterEnd(todayUTC);
-            const remainingDays = Math.floor((currentQEnd - todayUTC) / (24*60*60*1000)) + 1;
+            const remainingDays = Math.floor((currentQEnd - todayUTC) / (24 * 60 * 60 * 1000)) + 1;
 
             // Full quarter length for pro-rata calculation
             const qStartMonth = Math.floor(todayUTC.getUTCMonth() / 3) * 3;
             const currentQStart = new Date(Date.UTC(todayUTC.getUTCFullYear(), qStartMonth, 1));
-            const fullQuarterDays = Math.floor((currentQEnd - currentQStart) / (24*60*60*1000)) + 1;
+            const fullQuarterDays = Math.floor((currentQEnd - currentQStart) / (24 * 60 * 60 * 1000)) + 1;
 
             // Pro-rata charge = (remaining / full) × quarterly price for this slot
             const quarterlySlotPrice = slotPriceEntry.quarterly || 0;
@@ -1268,7 +1279,7 @@ export const Mutation = {
                 quarter: getQuarterLabel(cursor),
                 start: new Date(cursor),
                 end: qEnd,
-                days: Math.floor((qEnd - cursor) / (24*60*60*1000)) + 1
+                days: Math.floor((qEnd - cursor) / (24 * 60 * 60 * 1000)) + 1
               });
               cursor = getNextQuarterStart(cursor);
             }
