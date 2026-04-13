@@ -13,6 +13,14 @@ export const WalletSchema = gql`
     createdAt: String
   }
 
+  # Paginated wrapper returned by getWalletTransactions
+  type WalletTransactionPage {
+    transactions: [WalletTransaction!]!
+    totalCount: Int!
+    totalPages: Int!
+    currentPage: Int!
+  }
+
   type WalletInvoice {
     id: ID!
     invoiceNumber: String!
@@ -54,7 +62,6 @@ export const WalletSchema = gql`
   type SellerWalletType {
     id: ID!
     balance: Float!
-    recentTransactions: [WalletTransaction!]!
   }
 
   # All fields the frontend needs to POST to PayU
@@ -76,7 +83,7 @@ export const WalletSchema = gql`
 
   extend type Query {
     getMyWallet: SellerWalletType!
-    getWalletTransactions(limit: Int, offset: Int): [WalletTransaction!]!
+    getWalletTransactions(page: Int, limit: Int): WalletTransactionPage!
     getWalletInvoice(transactionId: ID!): WalletInvoice
     getWalletInvoices(limit: Int, offset: Int): [WalletInvoice!]!
   }
