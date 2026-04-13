@@ -240,6 +240,7 @@ export const CategoryRequestSchema = gql`
 
   input ApproveAdRequestInput {
     requestId: ID!
+    customStartDate: String
   }
 
   input RejectAdRequestInput {

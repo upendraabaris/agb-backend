@@ -101,7 +101,9 @@ async function fillSlotsForCategory(category_id, category_name) {
       if (!dur) continue;
       if (dur.status !== 'approved' && dur.status !== 'running') continue;
       const end = dur.end_date ? new Date(dur.end_date) : null;
+      const start = dur.start_date ? new Date(dur.start_date) : null;
       if (end && now > end) continue; // expired
+      if (start && now < start) continue; // not started yet
 
       const [ad_type, position] = slotName.split('_');
       slots[slotName] = {
@@ -236,7 +238,9 @@ async function fillSlotsForProduct(product_id) {
       if (!dur) continue;
       if (dur.status !== 'approved' && dur.status !== 'running') continue;
       const end = dur.end_date ? new Date(dur.end_date) : null;
+      const start = dur.start_date ? new Date(dur.start_date) : null;
       if (end && now > end) continue; // expired
+      if (start && now < start) continue;
 
       const [ad_type, position] = slotName.split('_');
       slots[slotName] = {
@@ -409,8 +413,8 @@ export const Mutation = {
   // Create default ad
   createDefaultAd: async (_, { input }) => {
     try {
-      const { ad_type, slot_position, mobile_image_url, desktop_image_url, 
-              redirect_url, title, description, is_active, priority } = input;
+      const { ad_type, slot_position, mobile_image_url, desktop_image_url,
+        redirect_url, title, description, is_active, priority } = input;
 
       // Validate
       if (!['banner', 'stamp'].includes(ad_type)) {
@@ -423,10 +427,10 @@ export const Mutation = {
       // Check if default ad already exists for this slot
       const existing = await DefaultAd.findOne({ ad_type, slot_position });
       if (existing) {
-        return { 
-          success: false, 
-          message: `Default ad already exists for ${ad_type}_${slot_position}. Use update instead.`, 
-          data: null 
+        return {
+          success: false,
+          message: `Default ad already exists for ${ad_type}_${slot_position}. Use update instead.`,
+          data: null
         };
       }
 
@@ -550,7 +554,7 @@ export const Mutation = {
   upsertCategoryDefaultAd: async (_, { category_id, input }) => {
     try {
       const { ad_type, slot_position, mobile_image_url, desktop_image_url,
-              redirect_url, title, is_active } = input;
+        redirect_url, title, is_active } = input;
 
       if (!['banner', 'stamp'].includes(ad_type)) {
         return { success: false, message: 'Invalid ad_type. Must be banner or stamp', data: null };
