@@ -205,7 +205,7 @@ export const Query = {
       const allRequests = await models.CategoryRequest.find().select('_id category_id').lean();
       // include start_date + end_date so we can compute quarter-level availability
       const allDurations = await models.CategoryRequestDuration.find({
-        status: { $in: ['running', 'approved'] }
+        status: { $in: ['running', 'approved', 'pending'] }
       }).select('category_request_id slot start_date end_date').lean();
 
       // Pre-compute next 4 quarters (same for all categories)
@@ -497,7 +497,7 @@ export const Query = {
         const conflict = await models.CategoryRequestDuration.findOne({
           slot: dur.slot,
           category_request_id: { $ne: requestId },
-          status: { $in: ['running', 'approved'] },
+          status: { $in: ['running', 'approved', 'pending'] },
           quarters_covered: { $in: candidateQuarters },
         }).lean();
 
@@ -707,6 +707,150 @@ export const Query = {
       throw err;
     }
   },
+
+
+  // getAdRequestsForApproval: authenticate(["admin"])(async (_, { status, page = 1, limit = 10 }, { models, req }) => {
+  //   try {
+  //     const query = {};
+  //     if (status && status !== 'all') {
+  //       query.status = status;
+  //     }
+
+  //     // Calculate skip value for pagination
+  //     const skip = (page - 1) * limit;
+
+  //     // Get total count for metadata
+  //     const totalCount = await models.CategoryRequest.countDocuments(query);
+  //     const totalPages = Math.ceil(totalCount / limit);
+
+  //     // Fetch requests with pagination, seller and category details
+  //     const requests = await models.CategoryRequest.find(query)
+  //       .populate({
+  //         path: 'seller_id',
+  //         select: 'firstName lastName email',
+  //         populate: {
+  //           path: 'seller',
+  //           select: 'companyName email mobileNo'
+  //         }
+  //       })
+  //       .populate('category_id', 'name')
+  //       .populate('tier_id', '_id')
+  //       .lean()
+  //       .sort({ createdAt: -1 })
+  //       .skip(skip)
+  //       .limit(limit);
+
+  //     if (!requests || requests.length === 0) {
+  //       return {
+  //         requests: [],
+  //         totalCount,
+  //         totalPages,
+  //         currentPage: page
+  //       };
+  //     }
+
+  //     const requestIds = requests.map(r => r._id);
+  //     const allMedias = await models.CategoryRequestMedia.find({
+  //       category_request_id: { $in: requestIds }
+  //     }).lean();
+
+  //     const allDurations = await models.CategoryRequestDuration.find({
+  //       category_request_id: { $in: requestIds }
+  //     }).lean();
+
+  //     const mediasMap = {};
+  //     const durationsMap = {};
+
+  //     allMedias.forEach(m => {
+  //       const key = m.category_request_id.toString();
+  //       if (!mediasMap[key]) mediasMap[key] = [];
+  //       mediasMap[key].push(m);
+  //     });
+
+  //     allDurations.forEach(d => {
+  //       const key = d.category_request_id.toString();
+  //       if (!durationsMap[key]) durationsMap[key] = [];
+  //       durationsMap[key].push(d);
+  //     });
+
+  //     const approvalRequests = requests
+  //       .map(req => {
+  //         const reqId = req._id.toString();
+  //         const sellerName = req.seller_id
+  //           ? `${req.seller_id.firstName || ''} ${req.seller_id.lastName || ''}`.trim()
+  //           : 'Unknown Seller';
+
+  //         let tierId = req.tier_id;
+  //         if (tierId && typeof tierId === 'object') {
+  //           tierId = tierId._id || tierId;
+  //         }
+  //         tierId = tierId ? tierId.toString() : null;
+
+  //         if (!tierId) return null;
+
+  //         return {
+  //           id: reqId,
+  //           seller_id: req.seller_id?._id?.toString(),
+  //           sellerName,
+  //           sellerEmail: req.seller_id?.email || 'N/A',
+  //           sellerCompanyName: req.seller_id?.seller?.companyName || 'N/A',
+  //           sellerBusinessEmail: req.seller_id?.seller?.email || 'N/A',
+  //           sellerBusinessPhone: req.seller_id?.seller?.mobileNo || 'N/A',
+  //           category_id: req.category_id?._id?.toString(),
+  //           categoryName: req.category_id?.name || 'Unknown',
+  //           tier_id: tierId,
+  //           status: req.status,
+  //           medias: (mediasMap[reqId] || []).map(m => ({
+  //             id: m._id?.toString(),
+  //             slot: m.slot,
+  //             media_type: m.media_type,
+  //             mobile_image_url: getFullImageUrl(m.mobile_image_url),
+  //             desktop_image_url: getFullImageUrl(m.desktop_image_url),
+  //             redirect_url: m.redirect_url,
+  //             url_type: m.url_type
+  //           })),
+  //           durations: (durationsMap[reqId] || []).map(d => ({
+  //             id: d._id?.toString(),
+  //             slot: d.slot,
+  //             duration_days: d.duration_days,
+  //             start_date: d.start_date ? new Date(d.start_date).toISOString() : null,
+  //             end_date: d.end_date ? new Date(d.end_date).toISOString() : null,
+  //             status: d.status,
+  //             start_preference: d.start_preference,
+  //             quarters_covered: d.quarters_covered || [],
+  //             pricing_breakdown: (d.pricing_breakdown || []).map(b => ({
+  //               quarter: b.quarter,
+  //               start: b.start ? new Date(b.start).toISOString() : null,
+  //               end: b.end ? new Date(b.end).toISOString() : null,
+  //               days: b.days,
+  //               rate_per_day: b.rate_per_day,
+  //               subtotal: b.subtotal
+  //             })),
+  //             total_price: d.total_price || 0,
+  //             coupon_code: d.coupon_code,
+  //             coupon_discount_type: d.coupon_discount_type,
+  //             coupon_discount_value: d.coupon_discount_value,
+  //             coupon_discount_amount: d.coupon_discount_amount,
+  //             final_price: d.final_price
+  //           })),
+  //           createdAt: req.createdAt ? new Date(req.createdAt).toISOString() : null,
+  //           updatedAt: req.updatedAt ? new Date(req.updatedAt).toISOString() : null
+  //         };
+  //       })
+  //       .filter(r => r !== null);
+
+  //     return {
+  //       requests: approvalRequests,
+  //       totalCount,
+  //       totalPages,
+  //       currentPage: page
+  //     };
+  //   } catch (err) {
+  //     console.error('[getAdRequestsForApproval] error:', err);
+  //     throw err;
+  //   }
+  // }),
+
 
   getAdRequestsForApproval: authenticate(["admin"])(async (_, { status }, { models, req }) => {
     try {

@@ -39,7 +39,9 @@ import { AdReportingSchema } from "./schema/adReportingSchema.js";
 import AdPricingConfigSchema from "./schema/adPricingConfigSchema.js";
 import DefaultAdSchema from "./schema/defaultAdSchema.js";
 import { ProductAdRequestSchema } from "./schema/productAdRequestSchema.js";
-import { WalletSchema } from "./schema/walletSchema.js";import adSettingsSchema from './schema/adSettingsSchema.js';
+import { WalletSchema } from "./schema/walletSchema.js";
+import adSettingsSchema from './schema/adSettingsSchema.js';
+
 export const RootSchema = gql`
   scalar Upload
   type Query {
