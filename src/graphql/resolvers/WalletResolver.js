@@ -20,12 +20,12 @@ function computeGst(baseAmount, buyerState, companyState) {
         buyerState.trim().toLowerCase() === companyState.trim().toLowerCase();
     const gstType = sameState ? 'cgst_sgst' : 'igst';
 
-    const cgstRate   = gstType === 'cgst_sgst' ? 9 : 0;
-    const sgstRate   = gstType === 'cgst_sgst' ? 9 : 0;
-    const igstRate   = gstType === 'igst'       ? 18 : 0;
+    const cgstRate = gstType === 'cgst_sgst' ? 9 : 0;
+    const sgstRate = gstType === 'cgst_sgst' ? 9 : 0;
+    const igstRate = gstType === 'igst' ? 18 : 0;
     const cgstAmount = gstType === 'cgst_sgst' ? Math.round(baseAmount * 0.09) : 0;
     const sgstAmount = gstType === 'cgst_sgst' ? Math.round(baseAmount * 0.09) : 0;
-    const igstAmount = gstType === 'igst'       ? gstAmount : 0;
+    const igstAmount = gstType === 'igst' ? gstAmount : 0;
 
     return { gstRate, gstAmount, totalCharged, gstType, cgstRate, cgstAmount, sgstRate, sgstAmount, igstRate, igstAmount };
 }
@@ -39,15 +39,13 @@ function generatePayUHash({ txnid, amount, productinfo, firstname, email, key, s
 }
 
 export const Query = {
-    // Returns current seller's wallet balance + last 10 transactions
+    // Returns current seller's wallet balance only. Transactions are served by getWalletTransactions.
     getMyWallet: authenticate(["seller", "adManager", "adsAssociate"])(async (_, __, { models, req }) => {
         try {
             const authHeader = req.headers.authorization;
             if (!authHeader) throw new Error("Authorization header missing");
             const token = authHeader.split(" ")[1];
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            // decoded._id is User._id — same pattern used by all other resolvers
-            // (CategoryRequestResolver, AdReportingResolver, etc.)
             const sellerId = decoded._id;
 
             // Find or create wallet document for this seller
@@ -56,26 +54,9 @@ export const Query = {
                 wallet = await models.SellerWallet.create({ seller_id: sellerId, balance: 0 });
             }
 
-            // Fetch last 10 transactions
-            const transactions = await models.WalletTransaction.find({ seller_id: sellerId })
-                .sort({ createdAt: -1 })
-                .limit(10)
-                .lean();
-
             return {
                 id: wallet._id.toString(),
                 balance: wallet.balance,
-                recentTransactions: transactions.map((t) => ({
-                    id: t._id.toString(),
-                    type: t.type,
-                    amount: t.amount,
-                    source: t.source,
-                    description: t.description || null,
-                    status: t.status,
-                    ccav_tracking_id: t.ccav_tracking_id || null,
-                    invoice_id: t.invoice_id ? t.invoice_id.toString() : null,
-                    createdAt: t.createdAt ? new Date(t.createdAt).toISOString() : null,
-                })),
             };
         } catch (err) {
             console.error("[getMyWallet] error:", err);
@@ -83,32 +64,46 @@ export const Query = {
         }
     }),
 
-    // Paginated transaction history for the logged-in seller
+    // Paginated transaction history for the logged-in seller (page-based, 10 per page by default)
     getWalletTransactions: authenticate(["seller", "adManager", "adsAssociate"])(
-        async (_, { limit = 20, offset = 0 }, { models, req }) => {
+        async (_, { page = 1, limit = 10 }, { models, req }) => {
             try {
                 const authHeader = req.headers.authorization;
                 const token = authHeader.split(" ")[1];
                 const decoded = jwt.verify(token, process.env.JWT_SECRET);
                 const sellerId = decoded._id;
 
-                const transactions = await models.WalletTransaction.find({ seller_id: sellerId })
-                    .sort({ createdAt: -1 })
-                    .skip(offset)
-                    .limit(limit)
-                    .lean();
+                const safePage = Math.max(1, page);
+                const safeLimit = Math.max(1, Math.min(limit, 100)); // cap at 100/page
+                const skip = (safePage - 1) * safeLimit;
 
-                return transactions.map((t) => ({
-                    id: t._id.toString(),
-                    type: t.type,
-                    amount: t.amount,
-                    source: t.source,
-                    description: t.description || null,
-                    status: t.status,
-                    ccav_tracking_id: t.ccav_tracking_id || null,
-                    invoice_id: t.invoice_id ? t.invoice_id.toString() : null,
-                    createdAt: t.createdAt ? new Date(t.createdAt).toISOString() : null,
-                }));
+                const [totalCount, transactions] = await Promise.all([
+                    models.WalletTransaction.countDocuments({ seller_id: sellerId }),
+                    models.WalletTransaction.find({ seller_id: sellerId })
+                        .sort({ createdAt: -1 })
+                        .skip(skip)
+                        .limit(safeLimit)
+                        .lean(),
+                ]);
+
+                const totalPages = Math.ceil(totalCount / safeLimit);
+
+                return {
+                    transactions: transactions.map((t) => ({
+                        id: t._id.toString(),
+                        type: t.type,
+                        amount: t.amount,
+                        source: t.source,
+                        description: t.description || null,
+                        status: t.status,
+                        ccav_tracking_id: t.ccav_tracking_id || null,
+                        invoice_id: t.invoice_id ? t.invoice_id.toString() : null,
+                        createdAt: t.createdAt ? new Date(t.createdAt).toISOString() : null,
+                    })),
+                    totalCount,
+                    totalPages,
+                    currentPage: safePage,
+                };
             } catch (err) {
                 console.error("[getWalletTransactions] error:", err);
                 throw err;
@@ -145,17 +140,17 @@ export const Query = {
                     buyerName: inv.buyerName || null,
                     buyerEmail: inv.buyerEmail || null,
                     buyerPhone: inv.buyerPhone || null,
-                    baseAmount:   inv.baseAmount   ?? null,
-                    gstRate:      inv.gstRate      ?? null,
-                    gstType:      inv.gstType      ?? null,
-                    cgstRate:     inv.cgstRate     ?? null,
-                    cgstAmount:   inv.cgstAmount   ?? null,
-                    sgstRate:     inv.sgstRate     ?? null,
-                    sgstAmount:   inv.sgstAmount   ?? null,
-                    igstRate:     inv.igstRate     ?? null,
-                    igstAmount:   inv.igstAmount   ?? null,
-                    totalAmount:  inv.totalAmount  ?? null,
-                    buyerState:   inv.buyerState   ?? null,
+                    baseAmount: inv.baseAmount ?? null,
+                    gstRate: inv.gstRate ?? null,
+                    gstType: inv.gstType ?? null,
+                    cgstRate: inv.cgstRate ?? null,
+                    cgstAmount: inv.cgstAmount ?? null,
+                    sgstRate: inv.sgstRate ?? null,
+                    sgstAmount: inv.sgstAmount ?? null,
+                    igstRate: inv.igstRate ?? null,
+                    igstAmount: inv.igstAmount ?? null,
+                    totalAmount: inv.totalAmount ?? null,
+                    buyerState: inv.buyerState ?? null,
                     companyState: inv.companyState ?? null,
                     createdAt: inv.createdAt ? new Date(inv.createdAt).toISOString() : null,
                 });
@@ -196,17 +191,17 @@ export const Query = {
                     buyerName: invoice.buyerName || null,
                     buyerEmail: invoice.buyerEmail || null,
                     buyerPhone: invoice.buyerPhone || null,
-                    baseAmount:   invoice.baseAmount   ?? null,
-                    gstRate:      invoice.gstRate      ?? null,
-                    gstType:      invoice.gstType      ?? null,
-                    cgstRate:     invoice.cgstRate     ?? null,
-                    cgstAmount:   invoice.cgstAmount   ?? null,
-                    sgstRate:     invoice.sgstRate     ?? null,
-                    sgstAmount:   invoice.sgstAmount   ?? null,
-                    igstRate:     invoice.igstRate     ?? null,
-                    igstAmount:   invoice.igstAmount   ?? null,
-                    totalAmount:  invoice.totalAmount  ?? null,
-                    buyerState:   invoice.buyerState   ?? null,
+                    baseAmount: invoice.baseAmount ?? null,
+                    gstRate: invoice.gstRate ?? null,
+                    gstType: invoice.gstType ?? null,
+                    cgstRate: invoice.cgstRate ?? null,
+                    cgstAmount: invoice.cgstAmount ?? null,
+                    sgstRate: invoice.sgstRate ?? null,
+                    sgstAmount: invoice.sgstAmount ?? null,
+                    igstRate: invoice.igstRate ?? null,
+                    igstAmount: invoice.igstAmount ?? null,
+                    totalAmount: invoice.totalAmount ?? null,
+                    buyerState: invoice.buyerState ?? null,
                     companyState: invoice.companyState ?? null,
                     createdAt: invoice.createdAt ? new Date(invoice.createdAt).toISOString() : null,
                 }));
@@ -250,7 +245,7 @@ export const Mutation = {
                 const phone = rawPhone.replace(/\D/g, "").slice(-10);
 
                 // ── GST computation ──────────────────────────────────────────
-                const buyerState   = sellerDoc?.state || "";
+                const buyerState = sellerDoc?.state || "";
                 const companyState = storeFeature?.storeBusinessState || "";
                 const gst = computeGst(amount, buyerState, companyState);
                 const totalCharged = gst.totalCharged; // what gets sent to PayU
@@ -271,8 +266,8 @@ export const Mutation = {
                     description: "Wallet top-up via PayU",
                     status: "pending",
                     // GST fields
-                    gstType:      gst.gstType,
-                    gstAmount:    gst.gstAmount,
+                    gstType: gst.gstType,
+                    gstAmount: gst.gstAmount,
                     totalCharged: gst.totalCharged,
                     buyerState,
                     companyState,
@@ -370,17 +365,17 @@ export const Mutation = {
                     companyPan: storeFeature?.storeBusinessPanNo || null,
                     companyGstin: storeFeature?.storeBusinessGstin || null,
                     companyWebsite: storeFeature?.storeName || null,
-                    baseAmount:   inv.baseAmount   ?? null,
-                    gstRate:      inv.gstRate      ?? null,
-                    gstType:      inv.gstType      ?? null,
-                    cgstRate:     inv.cgstRate     ?? null,
-                    cgstAmount:   inv.cgstAmount   ?? null,
-                    sgstRate:     inv.sgstRate     ?? null,
-                    sgstAmount:   inv.sgstAmount   ?? null,
-                    igstRate:     inv.igstRate     ?? null,
-                    igstAmount:   inv.igstAmount   ?? null,
-                    totalAmount:  inv.totalAmount  ?? null,
-                    buyerState:   inv.buyerState   ?? null,
+                    baseAmount: inv.baseAmount ?? null,
+                    gstRate: inv.gstRate ?? null,
+                    gstType: inv.gstType ?? null,
+                    cgstRate: inv.cgstRate ?? null,
+                    cgstAmount: inv.cgstAmount ?? null,
+                    sgstRate: inv.sgstRate ?? null,
+                    sgstAmount: inv.sgstAmount ?? null,
+                    igstRate: inv.igstRate ?? null,
+                    igstAmount: inv.igstAmount ?? null,
+                    totalAmount: inv.totalAmount ?? null,
+                    buyerState: inv.buyerState ?? null,
                     companyState: inv.companyState ?? null,
                     createdAt: inv.createdAt ? new Date(inv.createdAt).toISOString() : null,
                 });
@@ -405,17 +400,17 @@ export const Mutation = {
                     paymentMode: transaction.ccav_payment_mode || "",
                     gatewayTransactionId: transaction.ccav_tracking_id || "",
                     gstData: transaction.gstType ? {
-                        baseAmount:   transaction.amount,
-                        gstRate:      18,
-                        gstType:      transaction.gstType,
-                        cgstRate:     transaction.gstType === 'cgst_sgst' ? 9 : 0,
-                        cgstAmount:   transaction.gstType === 'cgst_sgst' ? Math.round(transaction.amount * 0.09) : 0,
-                        sgstRate:     transaction.gstType === 'cgst_sgst' ? 9 : 0,
-                        sgstAmount:   transaction.gstType === 'cgst_sgst' ? Math.round(transaction.amount * 0.09) : 0,
-                        igstRate:     transaction.gstType === 'igst' ? 18 : 0,
-                        igstAmount:   transaction.gstType === 'igst' ? Math.round(transaction.amount * 0.18) : 0,
-                        totalAmount:  transaction.totalCharged || (transaction.amount + Math.round(transaction.amount * 0.18)),
-                        buyerState:   transaction.buyerState   || null,
+                        baseAmount: transaction.amount,
+                        gstRate: 18,
+                        gstType: transaction.gstType,
+                        cgstRate: transaction.gstType === 'cgst_sgst' ? 9 : 0,
+                        cgstAmount: transaction.gstType === 'cgst_sgst' ? Math.round(transaction.amount * 0.09) : 0,
+                        sgstRate: transaction.gstType === 'cgst_sgst' ? 9 : 0,
+                        sgstAmount: transaction.gstType === 'cgst_sgst' ? Math.round(transaction.amount * 0.09) : 0,
+                        igstRate: transaction.gstType === 'igst' ? 18 : 0,
+                        igstAmount: transaction.gstType === 'igst' ? Math.round(transaction.amount * 0.18) : 0,
+                        totalAmount: transaction.totalCharged || (transaction.amount + Math.round(transaction.amount * 0.18)),
+                        buyerState: transaction.buyerState || null,
                         companyState: transaction.companyState || null,
                     } : null,
                 });
