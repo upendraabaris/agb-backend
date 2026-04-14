@@ -517,7 +517,7 @@ export const Query = {
         });
 
         const nextQStart = getNextQuarterStart(startUTC);
-        const nextQSegs = splitIntervalByQuarter(nextQStart, candidateDays);
+        const nextQSegs = splitIntervalByQuarter(nextQStart, Math.max(0, candidateDays - remainingInCurrentQ));
         candidateSegments.push(...nextQSegs);
       }
 
