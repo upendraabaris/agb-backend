@@ -830,6 +830,10 @@ export const Mutation = {
                     throw new Error('No pricing config found for this product tier. Please contact admin.');
                 }
 
+                // Get all existing ad requests for this product to check global slot cap
+                const existingRequests = await models.ProductAdRequest.find({ product_id: input.product_id }).select('_id').lean();
+                const existingIds = existingRequests.map(r => r._id);
+
                 console.log('[createProductAdRequest] Resolved tier:', tierId);
 
                 // Resolve start date NOW (before conflict check) so we can do date-range overlap
