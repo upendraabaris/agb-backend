@@ -1253,71 +1253,6 @@ export const Mutation = {
 
         console.log('[createCategoryRequest] Category found:', category._id);
 
-        // Check slot availability for this category (8 slots per category)
-        // Only count durations that overlap with the NEW request's intended time window
-        const requestsForCategory = await models.CategoryRequest.find({ category_id: input.category_id }).select('_id').lean();
-        const requestIdsForCategory = requestsForCategory.map(r => r._id);
-
-        // Compute the intended time window for this new request
-        const startPrefCheck = input.start_preference || 'today';
-        const startQuarterCheck = input.start_quarter ? new Date(input.start_quarter) : null;
-        const durationTypeCheck = input.duration_type || null;
-        const durInfoCheck = durationTypeCheck ? DURATION_MAP[durationTypeCheck] : null;
-        const numQuartersCheck = durInfoCheck ? durInfoCheck.quarters : 1;
-        const todayCheck = new Date();
-
-        // Helper to compute quarter end
-        const getQEnd = (date) => {
-          const m = date.getUTCMonth() + 1;
-          const yr = date.getUTCFullYear();
-          if (m >= 1 && m <= 3) return new Date(Date.UTC(yr, 2, 31, 23, 59, 59, 999));
-          if (m >= 4 && m <= 6) return new Date(Date.UTC(yr, 5, 30, 23, 59, 59, 999));
-          if (m >= 7 && m <= 9) return new Date(Date.UTC(yr, 8, 30, 23, 59, 59, 999));
-          return new Date(Date.UTC(yr, 11, 31, 23, 59, 59, 999));
-        };
-        const getNextQStart = (date) => {
-          const m = date.getUTCMonth();
-          const yr = date.getUTCFullYear();
-          if (m <= 2) return new Date(Date.UTC(yr, 3, 1));
-          if (m <= 5) return new Date(Date.UTC(yr, 6, 1));
-          if (m <= 8) return new Date(Date.UTC(yr, 9, 1));
-          return new Date(Date.UTC(yr + 1, 0, 1));
-        };
-
-        let intendedStart, intendedEnd;
-        if (startPrefCheck === 'today') {
-          intendedStart = new Date(Date.UTC(todayCheck.getFullYear(), todayCheck.getMonth(), todayCheck.getDate()));
-          // current quarter remaining + N full quarters
-          let cursor = getNextQStart(intendedStart);
-          for (let i = 0; i < numQuartersCheck; i++) { cursor = getNextQStart(cursor); }
-          // Go back one step to get end of last quarter
-          // Actually: start from next quarter, advance numQuarters-1 more
-          let endCursor = getNextQStart(intendedStart);
-          for (let i = 1; i < numQuartersCheck; i++) { endCursor = getNextQStart(endCursor); }
-          intendedEnd = getQEnd(endCursor);
-        } else {
-          intendedStart = startQuarterCheck || getNextQStart(todayCheck);
-          let endCursor = new Date(intendedStart);
-          for (let i = 1; i < numQuartersCheck; i++) { endCursor = getNextQStart(endCursor); }
-          intendedEnd = getQEnd(endCursor);
-        }
-
-        // Count only durations that OVERLAP with the intended time window
-        const bookedCount = requestIdsForCategory.length > 0
-          ? await models.CategoryRequestDuration.countDocuments({
-            category_request_id: { $in: requestIdsForCategory },
-            status: { $in: ['running', 'approved'] },
-            start_date: { $lte: intendedEnd },
-            end_date: { $gte: intendedStart }
-          })
-          : 0;
-
-        if (bookedCount >= 8) throw new Error('No slots available for this category in the selected time period');
-
-        console.log(`[createCategoryRequest] Intended window: ${intendedStart.toISOString()} - ${intendedEnd.toISOString()}`);
-
-        console.log('[createCategoryRequest] Booked slots for category:', bookedCount, '/ 8');
-
         // Create category request
         const req_obj = await models.CategoryRequest.create(
           [{
@@ -1364,6 +1299,10 @@ export const Mutation = {
         const numQuarters = durInfo ? durInfo.quarters : (input.duration_days === 360 ? 4 : input.duration_days === 180 ? 2 : 1);
         const configKey = durInfo ? durInfo.configKey : (input.duration_days === 360 ? 'yearly' : input.duration_days === 180 ? 'half_yearly' : 'quarterly');
 
+        // Fetch all requests for this category once to use in conflict checks
+        const requestsForCategory = await models.CategoryRequest.find({ category_id: input.category_id }).select('_id').lean();
+        const requestIdsForCategory = requestsForCategory.map(r => r._id);
+
         // Create duration entries for each selected slot
         const durations = await Promise.all(input.medias.map(async (m) => {
           let segments = [];
@@ -1385,7 +1324,7 @@ export const Mutation = {
           // Fetch all durations for THIS category to check for conflicts (New Clipping Logic)
           const allDurationsForCat = await models.CategoryRequestDuration.find({
             category_request_id: { $in: requestIdsForCategory },
-            status: { $in: ['running', 'approved'] }
+            status: { $in: ['running', 'approved', 'pending'] }
           }).lean();
 
           if (startPref !== 'today') {

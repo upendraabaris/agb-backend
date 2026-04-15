@@ -830,54 +830,11 @@ export const Mutation = {
                     throw new Error('No pricing config found for this product tier. Please contact admin.');
                 }
 
-                // Get all existing ad requests for this product to check global slot cap
-                const existingRequests = await models.ProductAdRequest.find({ product_id: input.product_id }).select('_id').lean();
-                const existingIds = existingRequests.map(r => r._id);
-
-                console.log('[createProductAdRequest] Resolved tier:', tierId);
-
                 // Resolve start date NOW (before conflict check) so we can do date-range overlap
                 const next4Quarters = getNext4Quarters();
                 const pref = input.start_preference || 'today';
                 const startDate = resolveStartDate(pref, input.selected_quarter, next4Quarters);
                 const candidateDays = input.duration_days || 90;
-                // Compute intendedEndDate from actual quarter boundaries (not a fixed +90 days)
-                // so conflict checks are accurate for Q2 (91 days), Q3/Q4 (92 days), etc.
-                const NUM_Q_MAP = { 30: 1, 90: 1, 180: 2, 365: 4, 360: 4 };
-                const numQConflict = NUM_Q_MAP[candidateDays] || 1;
-                let intendedEndDate;
-                if (pref !== 'today') {
-                    // select_quarter / next_quarter: numQ full quarters from startDate
-                    let cur = new Date(startDate);
-                    for (let i = 0; i < numQConflict; i++) {
-                        intendedEndDate = getQuarterEnd(cur);
-                        cur = getNextQuarterStart(cur);
-                    }
-                } else {
-                    // today: partial current Q + numQ full quarters starting from next Q
-                    let cur = getNextQuarterStart(startDate);
-                    for (let i = 0; i < numQConflict; i++) {
-                        intendedEndDate = getQuarterEnd(cur);
-                        cur = getNextQuarterStart(cur);
-                    }
-                }
-
-                // Per-slot conflict check moved into the segments loop (clipping mode)
-                // We no longer throw error here, we let the loop handle it by clipping.
-
-                // Guard the total 8-slot cap (count distinct slots booked in this time window)
-                const bookedCount = existingIds.length > 0
-                    ? await models.ProductAdRequestDuration.countDocuments({
-                        product_ad_request_id: { $in: existingIds },
-                        status: { $in: ['pending', 'running', 'approved'] },
-                        start_date: { $ne: null, $lte: intendedEndDate },
-                        end_date: { $ne: null, $gte: startDate },
-                    })
-                    : 0;
-
-                if (bookedCount >= 8) throw new Error('All 8 ad slots for this product are taken for the selected period. Please choose a different product or quarter.');
-
-                console.log('[createProductAdRequest] Booked slots for product:', bookedCount, '/ 8');
 
                 // Create the request
                 const requestDoc = await models.ProductAdRequest.create(
@@ -915,6 +872,10 @@ export const Mutation = {
                 };
                 const { configKey, numQuarters: numQ } = DURATION_MAP_PROD[candidateDays] || { configKey: 'quarterly', numQuarters: 1 };
 
+                // Get all existing ad requests for this product to check slot-specific conflicts
+                const existingRequests = await models.ProductAdRequest.find({ product_id: input.product_id }).select('_id').lean();
+                const existingIds = existingRequests.map(r => r._id);
+
                 const durations = [];
                 for (const m of input.medias) {
                     const slotPriceEntry = pricingConfig.generated_prices.find(p => p.slot_name === m.slot);
@@ -937,11 +898,11 @@ export const Mutation = {
                             const qStart = new Date(cursor);
                             const qEnd = getQuarterEnd(cursor);
 
-                            // Check for conflict in this specific slot + quarter
+                            // Check for conflict in this specific slot + quarter for this product
                             const conflict = await models.ProductAdRequestDuration.findOne({
+                                product_ad_request_id: { $in: existingIds },
                                 slot: m.slot,
                                 status: { $in: ['pending', 'running', 'approved'] },
-                                product_ad_request_id: { $ne: null }, // Avoid self-conflict if update
                                 quarters_covered: getQuarterLabel(qStart),
                                 start_date: { $lte: qEnd },
                                 end_date: { $gte: qStart }
@@ -972,8 +933,9 @@ export const Mutation = {
                         const currentQStartNum = new Date(Date.UTC(todayUTC.getUTCFullYear(), qStartMonth, 1));
                         const fullQuarterDays = Math.floor((currentQEnd - currentQStartNum) / (24 * 60 * 60 * 1000)) + 1;
 
-                        // Check conflict for current quarter segment
+                            // Check conflict for current quarter segment
                         const currentConflict = await models.ProductAdRequestDuration.findOne({
+                            product_ad_request_id: { $in: existingIds },
                             slot: m.slot,
                             status: { $in: ['pending', 'running', 'approved'] },
                             start_date: { $lte: currentQEnd },
@@ -1000,6 +962,7 @@ export const Mutation = {
                             const qEnd = getQuarterEnd(cursor);
 
                             const conflict = await models.ProductAdRequestDuration.findOne({
+                                product_ad_request_id: { $in: existingIds },
                                 slot: m.slot,
                                 status: { $in: ['pending', 'running', 'approved'] },
                                 quarters_covered: getQuarterLabel(qStart),
