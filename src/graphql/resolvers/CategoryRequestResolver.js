@@ -517,7 +517,7 @@ export const Query = {
         });
 
         const nextQStart = getNextQuarterStart(startUTC);
-        const nextQSegs = splitIntervalByQuarter(nextQStart, candidateDays);
+        const nextQSegs = splitIntervalByQuarter(nextQStart, Math.max(0, candidateDays - remainingInCurrentQ));
         candidateSegments.push(...nextQSegs);
       }
 
@@ -1228,7 +1228,7 @@ export const Query = {
   }
 };
 export const Mutation = {
-  createCategoryRequest: authenticate(["seller", "adManager", "adsAssociate"])(
+  createCategoryRequest: authenticate(["seller", "adsAssociate"])(
     async (_, { input }, { models, req }) => {
       const session = await mongoose.startSession();
       session.startTransaction();
@@ -1385,7 +1385,7 @@ export const Mutation = {
           // Fetch all durations for THIS category to check for conflicts (New Clipping Logic)
           const allDurationsForCat = await models.CategoryRequestDuration.find({
             category_request_id: { $in: requestIdsForCategory },
-            status: { $in: ['running', 'approved', 'pending'] }
+            status: { $in: ['running', 'approved'] }
           }).lean();
 
           if (startPref !== 'today') {

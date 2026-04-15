@@ -139,13 +139,25 @@ export const ProductAdRequestSchema = gql`
     quarterAvailability: [ProductAdQuarterInfo!]!
   }
 
+  type ProductSlotAvailabilityDetail {
+    slot: String!
+    startDate: String
+    endDate: String
+    conflict: Boolean!
+    conflictId: ID
+  }
+
+  type ProductSlotAvailability {
+    available: Boolean!
+    details: [ProductSlotAvailabilityDetail!]!
+  }
+
   type ProductApprovalResponse {
     success: Boolean!
     message: String
     data: ProductAdRequest
   }
 
-  # Pricing result for a product's tier
   type ProductPricingResult {
     tierId: ID!
     tierName: String!
@@ -174,6 +186,7 @@ export const ProductAdRequestSchema = gql`
     media_type: String
     mobile_image_url: String
     desktop_image_url: String
+    # redirect_url: String
     mobile_redirect_url: String
     desktop_redirect_url: String
     url_type: String
@@ -190,7 +203,7 @@ export const ProductAdRequestSchema = gql`
 
   input ApproveProductAdRequestInput {
     requestId: ID!
-    start_date: String!
+    start_date: String
   }
 
   input RejectProductAdRequestInput {
@@ -216,6 +229,9 @@ export const ProductAdRequestSchema = gql`
 
     # Quarter selection — returns current + next 3 quarters with per-product slot availability
     getUpcomingQuartersForProduct(productId: ID): [ProductAdQuarterInfo!]!
+
+    # Availability check for admin approval
+    checkProductSlotAvailability(requestId: ID!, start_date: String!): ProductSlotAvailability!
   }
 
   extend type Mutation {
