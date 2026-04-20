@@ -933,7 +933,7 @@ export const Mutation = {
                         const currentQStartNum = new Date(Date.UTC(todayUTC.getUTCFullYear(), qStartMonth, 1));
                         const fullQuarterDays = Math.floor((currentQEnd - currentQStartNum) / (24 * 60 * 60 * 1000)) + 1;
 
-                            // Check conflict for current quarter segment
+                        // Check conflict for current quarter segment
                         const currentConflict = await models.ProductAdRequestDuration.findOne({
                             product_ad_request_id: { $in: existingIds },
                             slot: m.slot,
