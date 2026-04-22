@@ -10,7 +10,8 @@ const CategoryRequestSchema = new mongoose.Schema({
   approved_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   approved_date: { type: Date },
   rejection_reason: { type: String },
-  total_cost: { type: Number }
+  total_cost: { type: Number },
+  held_amount: { type: Number, default: 0 }
 }, { timestamps: true });
 
 const CategoryRequest = mongoose.model('CategoryRequest', CategoryRequestSchema);

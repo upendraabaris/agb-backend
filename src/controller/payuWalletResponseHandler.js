@@ -4,6 +4,7 @@ import crypto from "crypto";
 import WalletTransaction from "../models/WalletTransaction.js";
 import SellerWallet from "../models/SellerWallet.js";
 import User from "../models/User.js";
+import Seller from "../models/Seller.js";
 import { createWalletInvoice } from "../services/walletInvoiceService.js";
 
 // Determine the wallet redirect base path based on the user's role.
@@ -84,25 +85,30 @@ export async function payuWalletResponse(request, response) {
             transaction.ccav_payment_mode = data.mode || "";
 
             // Generate invoice before saving the transaction so the invoice_id is persisted together
-            const user = await User.findById(transaction.seller_id).lean();
+            const [user, sellerProfile] = await Promise.all([
+                User.findById(transaction.seller_id).lean(),
+                Seller.findOne({ user: transaction.seller_id }).lean()
+            ]);
+
             if (user) {
                 await createWalletInvoice({
                     transaction,
                     user,
+                    buyerCompany: sellerProfile?.companyName || "",
                     paymentMode: data.mode || "",
                     gatewayTransactionId: data.payuMoneyId || data.bank_ref_num || "",
                     gstData: transaction.gstType ? {
-                        baseAmount:   transaction.amount,
-                        gstRate:      18,
-                        gstType:      transaction.gstType,
-                        cgstRate:     transaction.gstType === 'cgst_sgst' ? 9 : 0,
-                        cgstAmount:   transaction.gstType === 'cgst_sgst' ? Math.round(transaction.amount * 0.09) : 0,
-                        sgstRate:     transaction.gstType === 'cgst_sgst' ? 9 : 0,
-                        sgstAmount:   transaction.gstType === 'cgst_sgst' ? Math.round(transaction.amount * 0.09) : 0,
-                        igstRate:     transaction.gstType === 'igst' ? 18 : 0,
-                        igstAmount:   transaction.gstType === 'igst' ? Math.round(transaction.amount * 0.18) : 0,
-                        totalAmount:  transaction.totalCharged || (transaction.amount + Math.round(transaction.amount * 0.18)),
-                        buyerState:   transaction.buyerState   || null,
+                        baseAmount: transaction.amount,
+                        gstRate: 18,
+                        gstType: transaction.gstType,
+                        cgstRate: transaction.gstType === 'cgst_sgst' ? 9 : 0,
+                        cgstAmount: transaction.gstType === 'cgst_sgst' ? Math.round(transaction.amount * 0.09) : 0,
+                        sgstRate: transaction.gstType === 'cgst_sgst' ? 9 : 0,
+                        sgstAmount: transaction.gstType === 'cgst_sgst' ? Math.round(transaction.amount * 0.09) : 0,
+                        igstRate: transaction.gstType === 'igst' ? 18 : 0,
+                        igstAmount: transaction.gstType === 'igst' ? Math.round(transaction.amount * 0.18) : 0,
+                        totalAmount: transaction.totalCharged || (transaction.amount + Math.round(transaction.amount * 0.18)),
+                        buyerState: transaction.buyerState || null,
                         companyState: transaction.companyState || null,
                     } : null,
                 });

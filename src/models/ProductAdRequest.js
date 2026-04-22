@@ -8,7 +8,8 @@ const ProductAdRequestSchema = new mongoose.Schema({
     status: { type: String, enum: ['pending', 'approved', 'rejected', 'running', 'completed'], default: 'pending' },
     approved_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     approved_date: { type: Date },
-    rejection_reason: { type: String }
+    rejection_reason: { type: String },
+    held_amount: { type: Number, default: 0 }
 }, { timestamps: true });
 
 const ProductAdRequest = mongoose.model('ProductAdRequest', ProductAdRequestSchema);

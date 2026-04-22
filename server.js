@@ -225,7 +225,7 @@ const Server = async () => {
   });
 
   // CRON JOB: Ad duration expiry — mark expired durations and parent requests as 'completed'
-  cron.schedule("* * * * *", async () => {
+  cron.schedule("1 0 * * *", async () => {
     try {
       const now = new Date(
         new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })

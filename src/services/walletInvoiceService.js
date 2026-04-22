@@ -59,23 +59,23 @@ export async function generateInvoiceNumber() {
  * @param {object}  [opts.gstData]  - GST breakdown (optional, for new invoices)
  * @returns {Promise<import("mongoose").Document|null>}
  */
-export async function createWalletInvoice({ transaction, user, paymentMode = "", gatewayTransactionId = "", gstData = null }) {
+export async function createWalletInvoice({ transaction, user, buyerCompany = "", paymentMode = "", gatewayTransactionId = "", gstData = null }) {
   try {
     const invoiceNumber = await generateInvoiceNumber();
     const rawPhone = (user.mobileNo || "").replace(/\D/g, "").slice(-10);
 
     const gstFields = gstData ? {
-      baseAmount:   gstData.baseAmount,
-      gstRate:      gstData.gstRate,
-      gstType:      gstData.gstType,
-      cgstRate:     gstData.cgstRate,
-      cgstAmount:   gstData.cgstAmount,
-      sgstRate:     gstData.sgstRate,
-      sgstAmount:   gstData.sgstAmount,
-      igstRate:     gstData.igstRate,
-      igstAmount:   gstData.igstAmount,
-      totalAmount:  gstData.totalAmount,
-      buyerState:   gstData.buyerState,
+      baseAmount: gstData.baseAmount,
+      gstRate: gstData.gstRate,
+      gstType: gstData.gstType,
+      cgstRate: gstData.cgstRate,
+      cgstAmount: gstData.cgstAmount,
+      sgstRate: gstData.sgstRate,
+      sgstAmount: gstData.sgstAmount,
+      igstRate: gstData.igstRate,
+      igstAmount: gstData.igstAmount,
+      totalAmount: gstData.totalAmount,
+      buyerState: gstData.buyerState,
       companyState: gstData.companyState,
     } : {};
 
@@ -89,6 +89,7 @@ export async function createWalletInvoice({ transaction, user, paymentMode = "",
       paymentGateway: transaction.source === "ccavenue" ? "ccavenue" : "payu",
       description: transaction.description || "Wallet Top-up",
       buyerName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Seller",
+      buyerCompany: buyerCompany || (gstData?.buyerCompany) || "",
       buyerEmail: user.email || "",
       buyerPhone: rawPhone,
       ...gstFields,

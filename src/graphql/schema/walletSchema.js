@@ -33,6 +33,7 @@ export const WalletSchema = gql`
     description: String
     # Buyer (receiver) details
     buyerName: String
+    buyerCompany: String
     buyerEmail: String
     buyerPhone: String
     buyerAddress: String
@@ -62,6 +63,7 @@ export const WalletSchema = gql`
   type SellerWalletType {
     id: ID!
     balance: Float!
+    hold_balance: Float
   }
 
   # All fields the frontend needs to POST to PayU

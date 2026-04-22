@@ -1574,6 +1574,28 @@ export const Mutation = {
 
         console.log('[createCategoryRequest] Duration data to save:', JSON.stringify(durations, null, 2));
 
+        // ── Wallet Hold Logic ──
+        const totalToHold = durations.reduce((sum, d) => sum + (d.final_price || 0), 0);
+        let wallet = await SellerWallet.findOne({ seller_id: sellerId }).session(session);
+        if (!wallet) {
+          wallet = (await SellerWallet.create([{ seller_id: sellerId, balance: 0, hold_balance: 0 }], { session }))[0];
+        }
+
+        const availableBalance = wallet.balance - wallet.hold_balance;
+        if (availableBalance < totalToHold) {
+          throw new Error(`Insufficient wallet balance. Total required: ₹${totalToHold}, Available: ₹${availableBalance}`);
+        }
+
+        wallet.hold_balance += totalToHold;
+        await wallet.save({ session });
+
+        // Update request with held amount and total_cost
+        await models.CategoryRequest.updateOne(
+          { _id: req_obj[0]._id },
+          { $set: { held_amount: totalToHold, total_cost: totalToHold } },
+          { session }
+        );
+
         const savedDurations = await models.CategoryRequestDuration.insertMany(durations, { session });
         console.log('[createCategoryRequest] Duration entries created:', savedDurations.length);
 
@@ -1809,23 +1831,24 @@ export const Mutation = {
       }
       console.log('[approveAdRequest] Total ad cost:', totalCost, 'After coupon discount:', totalDeduction, 'Coupon:', appliedCouponCode);
 
-      // ── Check seller wallet balance ──
+      // ── Settle Wallet Hold Logic ──
       const sellerId = categoryRequest.seller_id;
       let wallet = await SellerWallet.findOne({ seller_id: sellerId }).session(session);
       if (!wallet) {
-        wallet = (await SellerWallet.create([{ seller_id: sellerId, balance: 0 }], { session }))[0];
+        wallet = (await SellerWallet.create([{ seller_id: sellerId, balance: 0, hold_balance: 0 }], { session }))[0];
       }
 
+      const heldAmount = categoryRequest.held_amount || 0;
+      // Settlement: Deduct from balance, release from hold
       if (wallet.balance < totalDeduction) {
-        throw new Error(
-          `Insufficient wallet balance. Seller has ₹${wallet.balance} but ₹${totalDeduction} is required.`
-        );
+        throw new Error(`Insufficient balance to settle ad. Balance: ₹${wallet.balance}, Required: ₹${totalDeduction}`);
       }
 
-      // ── Deduct from wallet (discounted amount) ──
       wallet.balance -= totalDeduction;
+      wallet.hold_balance = Math.max(0, (wallet.hold_balance || 0) - heldAmount);
+
       await wallet.save({ session });
-      console.log('[approveAdRequest] Wallet deducted. New balance:', wallet.balance);
+      console.log('[approveAdRequest] Wallet settled. New balance:', wallet.balance, 'New hold:', wallet.hold_balance);
 
       // ── Create debit transaction record ──
       const categoryName = categoryRequest.category_id?.name || 'Unknown';
@@ -1937,6 +1960,18 @@ export const Mutation = {
         },
         { session }
       );
+
+      // ── Release Wallet Hold Logic ──
+      const sellerId = categoryRequest.seller_id;
+      const heldAmount = categoryRequest.held_amount || 0;
+      if (heldAmount > 0) {
+        let wallet = await SellerWallet.findOne({ seller_id: sellerId }).session(session);
+        if (wallet) {
+          wallet.hold_balance = Math.max(0, (wallet.hold_balance || 0) - heldAmount);
+          await wallet.save({ session });
+          console.log('[rejectAdRequest] Released hold of ₹' + heldAmount + '. New hold:', wallet.hold_balance);
+        }
+      }
 
       // Update category request status
       const updatedRequest = await models.CategoryRequest.findByIdAndUpdate(
