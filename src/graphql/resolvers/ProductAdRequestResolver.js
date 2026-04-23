@@ -649,6 +649,10 @@ export const Query = {
             const durations = await models.ProductAdRequestDuration.find({ product_ad_request_id: requestId }).lean();
             if (!durations.length) throw new Error('No durations found for this request');
 
+            // Get all requests for the same product to check for conflicts within the product scope
+            const siblingRequests = await models.ProductAdRequest.find({ product_id: adRequest.product_id }).select('_id').lean();
+            const siblingIds = siblingRequests.map(r => r._id);
+
             // Find existing bookings that might conflict
             const startDate = new Date(start_date);
             const totalConflicts = 0;
@@ -678,8 +682,8 @@ export const Query = {
                 const intendedEndDate = candidateSegments[candidateSegments.length - 1].end;
 
                 const conflict = await models.ProductAdRequestDuration.findOne({
+                    product_ad_request_id: { $in: siblingIds, $ne: requestId },
                     slot: dur.slot,
-                    product_ad_request_id: { $ne: requestId },
                     status: { $in: ['running', 'approved', 'pending'] },
                     quarters_covered: { $in: candidateQuarters },
                     // Extra date overlap check for precision
@@ -995,7 +999,7 @@ export const Mutation = {
                     const totalDays = segments.reduce((sum, s) => sum + s.days, 0);
 
                     // Build breakdown — mirrors category: pro-rata segment + paid segments
-                    let pricingBreakdown;
+                    let pricingBreakdown = [];
                     if (proRataCharge > 0 && segments.length > 1) {
                         const proRataSeg = segments[0];
                         const paidSegs = segments.slice(1);
@@ -1015,13 +1019,25 @@ export const Mutation = {
                             })),
                         ];
                     } else {
-                        // Quarter-boundary start OR only pro-rata: uniform rate across all segments
-                        const ratePerDay = totalDays > 0 ? Math.round((finalPrice / totalDays) * 100) / 100 : 0;
+                        // Quarter-boundary start OR only pro-rata: spread base amount (excluding surcharge)
+                        const baseTotal = adjustedSlotPrice + proRataCharge;
+                        const ratePerDay = totalDays > 0 ? Math.round((baseTotal / totalDays) * 100) / 100 : 0;
                         pricingBreakdown = segments.map(s => ({
                             quarter: s.quarter, start: s.start.toISOString(), end: s.end.toISOString(),
                             days: s.days, rate_per_day: ratePerDay,
                             subtotal: Math.round(ratePerDay * s.days),
                         }));
+                    }
+
+                    if (externalSurcharge > 0) {
+                        pricingBreakdown.push({
+                            quarter: 'External URL Surcharge',
+                            start: null,
+                            end: null,
+                            days: 0,
+                            rate_per_day: 0,
+                            subtotal: externalSurcharge
+                        });
                     }
 
                     const quartersCovered = [...new Set(segments.map(s => s.quarter))];
@@ -1105,6 +1121,29 @@ export const Mutation = {
 
                     console.log('[createProductAdRequest] Coupon applied:', coupon.couponCode, 'Total discount:', totalDiscount);
                 }
+
+                // ── Wallet Hold Logic ──
+                const totalToHold = durations.reduce((sum, d) => sum + (d.final_price || 0), 0);
+
+                let wallet = await SellerWallet.findOne({ seller_id: sellerId }).session(session);
+                if (!wallet) {
+                    wallet = (await SellerWallet.create([{ seller_id: sellerId, balance: 0, hold_balance: 0 }], { session }))[0];
+                }
+
+                const availableBalance = wallet.balance - wallet.hold_balance;
+                if (availableBalance < totalToHold) {
+                    throw new Error(`Insufficient wallet balance. Total required: ₹${totalToHold}, Available: ₹${availableBalance}`);
+                }
+
+                wallet.hold_balance += totalToHold;
+                await wallet.save({ session });
+
+                // Update request with held amount
+                await models.ProductAdRequest.updateOne(
+                    { _id: requestDoc[0]._id },
+                    { $set: { held_amount: totalToHold } },
+                    { session }
+                );
 
                 await models.ProductAdRequestDuration.insertMany(durations, { session });
 
@@ -1308,21 +1347,24 @@ export const Mutation = {
                 }
 
                 // ── Check seller wallet balance ──
+                // ── Settle Wallet Hold Logic ──
                 const sellerId = adRequest.seller_id;
                 let wallet = await SellerWallet.findOne({ seller_id: sellerId }).session(session);
                 if (!wallet) {
-                    wallet = (await SellerWallet.create([{ seller_id: sellerId, balance: 0 }], { session }))[0];
-                }
-                if (wallet.balance < totalDeduction) {
-                    throw new Error(
-                        `Insufficient wallet balance. Seller has ₹${wallet.balance} but ₹${totalDeduction} is required.`
-                    );
+                    wallet = (await SellerWallet.create([{ seller_id: sellerId, balance: 0, hold_balance: 0 }], { session }))[0];
                 }
 
-                // ── Deduct from wallet (net amount after coupon) ──
+                const heldAmount = adRequest.held_amount || 0;
+                // Settlement: Deduct from balance, release from hold
+                if (wallet.balance < totalDeduction) {
+                    throw new Error(`Insufficient balance to settle ad. Balance: ₹${wallet.balance}, Required: ₹${totalDeduction}`);
+                }
+
                 wallet.balance -= totalDeduction;
+                wallet.hold_balance = Math.max(0, (wallet.hold_balance || 0) - heldAmount);
+
                 await wallet.save({ session });
-                console.log('[approveProductAdRequest] Wallet deducted. New balance:', wallet.balance);
+                console.log('[approveProductAdRequest] Wallet settled. New balance:', wallet.balance, 'New hold:', wallet.hold_balance);
 
                 // ── Create debit transaction record ──
                 const productName = adRequest.product_id?.fullName || adRequest.product_id?.previewName || 'Unknown';
@@ -1386,15 +1428,29 @@ export const Mutation = {
     // Admin rejects a product ad request
     rejectProductAdRequest: authenticate(['admin'])(
         async (_, { input }, { models, req }) => {
+            const session = await mongoose.startSession();
+            session.startTransaction();
             try {
                 const { requestId, rejection_reason } = input;
 
-                const adRequest = await models.ProductAdRequest.findById(requestId);
+                const adRequest = await models.ProductAdRequest.findById(requestId).session(session);
                 if (!adRequest) throw new Error('Product ad request not found');
+
+                // ── Release Wallet Hold Logic ──
+                const sellerId = adRequest.seller_id;
+                const heldAmount = adRequest.held_amount || 0;
+                if (heldAmount > 0) {
+                    let wallet = await SellerWallet.findOne({ seller_id: sellerId }).session(session);
+                    if (wallet) {
+                        wallet.hold_balance = Math.max(0, (wallet.hold_balance || 0) - heldAmount);
+                        await wallet.save({ session });
+                        console.log('[rejectProductAdRequest] Released hold of ₹' + heldAmount + '. New hold:', wallet.hold_balance);
+                    }
+                }
 
                 adRequest.status = 'rejected';
                 adRequest.rejection_reason = rejection_reason || 'No reason provided';
-                await adRequest.save();
+                await adRequest.save({ session });
 
                 // Also mark all duration records as rejected so the slots are freed immediately
                 await models.ProductAdRequestDuration.updateMany(

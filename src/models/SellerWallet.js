@@ -13,6 +13,10 @@ const sellerWalletSchema = new mongoose.Schema(
             type: Number,
             default: 0,
         },
+        hold_balance: {
+            type: Number,
+            default: 0,
+        },
     },
     { timestamps: true }
 );

@@ -1574,6 +1574,28 @@ export const Mutation = {
 
         console.log('[createCategoryRequest] Duration data to save:', JSON.stringify(durations, null, 2));
 
+        // ── Wallet Hold Logic ──
+        const totalToHold = durations.reduce((sum, d) => sum + (d.final_price || 0), 0);
+        let wallet = await SellerWallet.findOne({ seller_id: sellerId }).session(session);
+        if (!wallet) {
+          wallet = (await SellerWallet.create([{ seller_id: sellerId, balance: 0, hold_balance: 0 }], { session }))[0];
+        }
+
+        const availableBalance = wallet.balance - wallet.hold_balance;
+        if (availableBalance < totalToHold) {
+          throw new Error(`Insufficient wallet balance. Total required: ₹${totalToHold}, Available: ₹${availableBalance}`);
+        }
+
+        wallet.hold_balance += totalToHold;
+        await wallet.save({ session });
+
+        // Update request with held amount and total_cost
+        await models.CategoryRequest.updateOne(
+          { _id: req_obj[0]._id },
+          { $set: { held_amount: totalToHold, total_cost: totalToHold } },
+          { session }
+        );
+
         const savedDurations = await models.CategoryRequestDuration.insertMany(durations, { session });
         console.log('[createCategoryRequest] Duration entries created:', savedDurations.length);
 
@@ -1624,284 +1646,297 @@ export const Mutation = {
 
   // Admin approve ad request
   approveAdRequest: authenticate(["admin", "adManager", "adsAssociate"])(async (_, { input }, { models, req }) => {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-    try {
-      const { requestId, customStartDate } = input;
+    let retries = 3;
+    while (retries > 0) {
+      const session = await mongoose.startSession();
+      session.startTransaction();
+      try {
+        const { requestId, customStartDate } = input;
 
-      // Extract admin ID from JWT
-      const authHeader = req.headers.authorization;
-      if (!authHeader) throw new Error('Authorization header missing');
+        // Extract admin ID from JWT
+        const authHeader = req.headers.authorization;
+        if (!authHeader) throw new Error('Authorization header missing');
 
-      const token = authHeader.split(' ')[1];
-      if (!token) throw new Error('Token missing');
+        const token = authHeader.split(' ')[1];
+        if (!token) throw new Error('Token missing');
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const adminId = decoded._id;
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const adminId = decoded._id;
 
-      console.log('[approveAdRequest] Admin:', adminId, 'Request:', requestId, 'Custom Start Date:', customStartDate);
+        console.log('[approveAdRequest] Admin:', adminId, 'Request:', requestId, 'Custom Start Date:', customStartDate);
 
-      // Find the request
-      const categoryRequest = await models.CategoryRequest.findById(requestId).populate('category_id');
-      if (!categoryRequest) throw new Error('Ad request not found');
-      if (categoryRequest.status !== 'pending') throw new Error('Request is not in pending status');
+        // Find the request
+        const categoryRequest = await models.CategoryRequest.findById(requestId).populate('category_id');
+        if (!categoryRequest) throw new Error('Ad request not found');
+        if (categoryRequest.status !== 'pending') throw new Error('Request is not in pending status');
 
-      // ── Determine effective start date for all slots ──
-      const today = new Date();
-      const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
-      const effectiveStartDate = customStartDate ? new Date(customStartDate) : todayUTC;
+        // ── Determine effective start date for all slots ──
+        const today = new Date();
+        const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+        const effectiveStartDate = customStartDate ? new Date(customStartDate) : todayUTC;
 
-      // ── Calculate total ad cost from all slot durations ──
-      let durations = await models.CategoryRequestDuration.find({ category_request_id: requestId }).lean();
-      let anyAdjustments = false;
+        // ── Calculate total ad cost from all slot durations ──
+        let durations = await models.CategoryRequestDuration.find({ category_request_id: requestId }).lean();
 
-      const pricingConfig = await AdPricingConfig.findOne({ tier_id: categoryRequest.tier_id, is_active: true }).lean();
-      if (!pricingConfig) throw new Error('Active pricing configuration not found for this tier');
+        // ── Process Recalculations and hold updated values in maps ──
+        const updatedSlotPrices = {}; // slotId -> { totalPrice, breakdown, durationDays, finalPrice }
+        let anyAdjustments = false;
 
-      for (const d of durations) {
-        const originalStart = new Date(d.start_date);
-        const originalEnd = new Date(d.end_date);
+        const pricingConfig = await AdPricingConfig.findOne({ tier_id: categoryRequest.tier_id, is_active: true }).lean();
+        if (!pricingConfig) throw new Error('Active pricing configuration not found for this tier');
 
-        // RECALCULATION TRIGGERS:
-        // 1. start_preference was "today" (always recalibrate to actual approval/custom date)
-        // 2. Start date is explicitly overridden by Admin
-        // 3. Approval happened AFTER the originally requested start date
-        const shouldAdjust = d.start_preference === 'today' || customStartDate || effectiveStartDate > originalStart;
+        for (const d of durations) {
+          const originalStart = new Date(d.start_date);
 
-        if (shouldAdjust) {
-          anyAdjustments = true;
-          const newSegments = [];
-          let newProRataCharge = 0;
+          // RECALCULATION TRIGGER: Only if dates actually changed or admin override
+          const isDateChanged = effectiveStartDate.toISOString().split('T')[0] !== originalStart.toISOString().split('T')[0];
+          const shouldAdjust = !!customStartDate || isDateChanged;
 
-          // Re-calculate segments from "effectiveStartDate" up to the original FIXED "end_date"
-          const currentQEnd = getQuarterEnd(effectiveStartDate);
-          const remainingDaysInFirstQ = Math.floor((currentQEnd - effectiveStartDate) / (24 * 60 * 60 * 1000)) + 1;
+          if (shouldAdjust) {
+            anyAdjustments = true;
+            const newSegments = [];
 
-          // Standard logic: if approval date has passed the original end date, we shift the entire window?
-          // User said: "quarter 3 mai book kiya lekin admin ne same request ko quarter 4 mai approve kiye to ye bhi dekhna hoga"
-          // This means if we've completely missed the window, we might need a new window.
-          // For now, let's just start from effectiveStartDate and go until the original number of quarters is covered
+            const currentQEnd = getQuarterEnd(effectiveStartDate);
+            const qStartMonth = Math.floor(effectiveStartDate.getUTCMonth() / 3) * 3;
+            const currentQStart = new Date(Date.UTC(effectiveStartDate.getUTCFullYear(), qStartMonth, 1));
+            const isExactStartOfQuarter = effectiveStartDate.getTime() === currentQStart.getTime();
 
-          const numQuartersRequested = (d.duration_days >= 315 ? 4 : d.duration_days >= 150 ? 2 : 1);
+            const remainingDaysInFirstQ = Math.floor((currentQEnd - effectiveStartDate) / (24 * 60 * 60 * 1000)) + 1;
 
-          newSegments.push({
-            quarter: getQuarterLabel(effectiveStartDate),
-            start: new Date(effectiveStartDate),
-            end: currentQEnd,
-            days: remainingDaysInFirstQ
-          });
+            const originalFullQuartersCount = d.pricing_breakdown?.filter(b =>
+              b.quarter.startsWith('Q') && b.days > 80
+            ).length || 1;
 
-          const slotPriceEntry = pricingConfig.generated_prices.find(p => p.slot_name === d.slot);
-          const quarterlySlotPrice = slotPriceEntry?.quarterly || 0;
-          const configKey = d.duration_days >= 315 ? 'yearly' : d.duration_days >= 150 ? 'half_yearly' : 'quarterly';
-          const slotPrice = slotPriceEntry?.[configKey] || 0;
-
-          const qStartMonth = Math.floor(effectiveStartDate.getUTCMonth() / 3) * 3;
-          const currentQStart = new Date(Date.UTC(effectiveStartDate.getUTCFullYear(), qStartMonth, 1));
-          const fullQuarterDays = Math.floor((currentQEnd - currentQStart) / (24 * 60 * 60 * 1000)) + 1;
-          newProRataCharge = Math.round((remainingDaysInFirstQ / fullQuarterDays) * quarterlySlotPrice);
-
-          // Add subsequent quarters
-          let cursor = getNextQuarterStart(effectiveStartDate);
-          for (let i = 1; i < numQuartersRequested; i++) {
-            const qEnd = getQuarterEnd(cursor);
-            newSegments.push({
-              quarter: getQuarterLabel(cursor),
-              start: new Date(cursor),
-              end: qEnd,
-              days: Math.floor((qEnd - cursor) / (24 * 60 * 60 * 1000)) + 1
-            });
-            cursor = getNextQuarterStart(cursor);
-          }
-
-          const newTotalDays = newSegments.reduce((sum, s) => sum + s.days, 0);
-          const newEndDate = newSegments[newSegments.length - 1].end;
-
-          // External Surcharge
-          const externalSurchargeLine = d.pricing_breakdown?.find(b => b.quarter === 'External URL Surcharge');
-          const externalSurcharge = externalSurchargeLine ? externalSurchargeLine.subtotal : 0;
-
-          // Price is: Pro-rata of 1st Q + Full Quarters for the rest
-          // If we are covering exactly N quarters as requested, adjustedSlotPrice is simply slotPrice minus pro-rata of 1st full Q
-          // Actually, let's keep it simple: adjustedSlotPrice = (numSegments-1) * quarterlySlotPrice
-          const actualPaidQuartersCount = newSegments.length - 1;
-          const newAdjustedSlotPrice = Math.round((actualPaidQuartersCount / numQuartersRequested) * slotPrice);
-          const newTotalPrice = newAdjustedSlotPrice + newProRataCharge + externalSurcharge;
-
-          // Build Breakdown
-          let newBreakdown = [];
-          const proRataSeg = newSegments[0];
-          const proRataRate = Math.round((newProRataCharge / proRataSeg.days) * 100) / 100;
-          newBreakdown.push({
-            quarter: proRataSeg.quarter,
-            start: proRataSeg.start.toISOString(),
-            end: proRataSeg.end.toISOString(),
-            days: proRataSeg.days,
-            rate_per_day: proRataRate,
-            subtotal: newProRataCharge
-          });
-
-          if (newSegments.length > 1) {
-            const paidSegs = newSegments.slice(1);
-            const paidTotalDays = paidSegs.reduce((sum, s) => sum + s.days, 0);
-            const paidRate = paidTotalDays > 0 ? Math.round((newAdjustedSlotPrice / paidTotalDays) * 100) / 100 : 0;
-            paidSegs.forEach(s => {
-              newBreakdown.push({
-                quarter: s.quarter,
-                start: s.start.toISOString(),
-                end: s.end.toISOString(),
-                days: s.days,
-                rate_per_day: paidRate,
-                subtotal: Math.round((s.days / paidTotalDays) * newAdjustedSlotPrice)
+            if (!isExactStartOfQuarter) {
+              newSegments.push({
+                quarter: getQuarterLabel(effectiveStartDate),
+                start: new Date(effectiveStartDate),
+                end: currentQEnd,
+                days: remainingDaysInFirstQ
               });
-            });
-          }
-          if (externalSurcharge > 0) {
-            newBreakdown.push({ quarter: 'External URL Surcharge', start: null, end: null, days: 0, rate_per_day: 0, subtotal: externalSurcharge });
-          }
+            }
 
-          // Coupon
-          let newCouponDiscount = 0;
-          if (d.coupon_code) {
-            if (d.coupon_discount_type === 'flat') {
-              newCouponDiscount = Math.min(d.coupon_discount_value, newTotalPrice);
+            const slotPriceEntry = pricingConfig.generated_prices.find(p => p.slot_name === d.slot);
+            const configKey = d.duration_days >= 315 ? 'yearly' : d.duration_days >= 150 ? 'half_yearly' : 'quarterly';
+            const slotPrice = slotPriceEntry?.[configKey] || 0;
+            const quarterlySlotPrice = slotPriceEntry?.quarterly || 0;
+
+            const fullQuarterDays = Math.floor((currentQEnd - currentQStart) / (24 * 60 * 60 * 1000)) + 1;
+            const newProRataCharge = isExactStartOfQuarter ? 0 : Math.round((remainingDaysInFirstQ / fullQuarterDays) * quarterlySlotPrice);
+
+            let cursor = isExactStartOfQuarter ? new Date(effectiveStartDate) : getNextQuarterStart(effectiveStartDate);
+            for (let i = 0; i < originalFullQuartersCount; i++) {
+              const qEnd = getQuarterEnd(cursor);
+              newSegments.push({
+                quarter: getQuarterLabel(cursor),
+                start: new Date(cursor),
+                end: qEnd,
+                days: Math.floor((qEnd - cursor) / (24 * 60 * 60 * 1000)) + 1
+              });
+              cursor = getNextQuarterStart(cursor);
+            }
+
+            const newTotalDays = newSegments.reduce((sum, s) => sum + s.days, 0);
+            const newEndDate = newSegments[newSegments.length - 1].end;
+            const externalSurchargeLine = d.pricing_breakdown?.find(b => b.quarter === 'External URL Surcharge');
+            const externalSurcharge = externalSurchargeLine ? externalSurchargeLine.subtotal : 0;
+
+            const actualPaidQuartersCount = newSegments.filter(s => s.days > 80).length;
+            const newAdjustedSlotPrice = Math.round((actualPaidQuartersCount / originalFullQuartersCount) * slotPrice);
+            const newTotalPrice = newAdjustedSlotPrice + newProRataCharge + externalSurcharge;
+
+            let newBreakdown = [];
+            if (!isExactStartOfQuarter) {
+              const proRataRate = Math.round((newProRataCharge / remainingDaysInFirstQ) * 100) / 100;
+              newBreakdown.push({
+                quarter: newSegments[0].quarter,
+                start: newSegments[0].start.toISOString(),
+                end: newSegments[0].end.toISOString(),
+                days: remainingDaysInFirstQ,
+                rate_per_day: proRataRate,
+                subtotal: newProRataCharge
+              });
+            }
+
+            const paidSegs = newSegments.filter(s => s.days > 80);
+            if (paidSegs.length > 0) {
+              const paidTotalDays = paidSegs.reduce((sum, s) => sum + s.days, 0);
+              const paidRate = paidTotalDays > 0 ? Math.round((newAdjustedSlotPrice / paidTotalDays) * 100) / 100 : 0;
+              paidSegs.forEach(s => {
+                newBreakdown.push({
+                  quarter: s.quarter,
+                  start: s.start.toISOString(),
+                  end: s.end.toISOString(),
+                  days: s.days,
+                  rate_per_day: paidRate,
+                  subtotal: Math.round((s.days / paidTotalDays) * newAdjustedSlotPrice)
+                });
+              });
+            }
+            if (externalSurcharge > 0) {
+              newBreakdown.push({ quarter: 'External URL Surcharge', start: null, end: null, days: 0, rate_per_day: 0, subtotal: externalSurcharge });
+            }
+
+            updatedSlotPrices[d._id.toString()] = {
+              totalPrice: newTotalPrice,
+              breakdown: newBreakdown,
+              durationDays: newTotalDays,
+              endDate: newEndDate
+            };
+          }
+        }
+
+        // ── Aggregate Deductions (STRICTLY TRUST MODAL VALUES IF NO ADJUSTMENT) ──
+        let totalDeduction = 0;
+        let totalGrossCost = 0;
+        let totalCouponDiscount = 0;
+
+        // 1. First, calculate the total Gross Cost (Raw totals)
+        durations.forEach(d => {
+          const idStr = d._id.toString();
+          const price = updatedSlotPrices[idStr]?.totalPrice ?? (d.total_price || 0);
+          totalGrossCost += price;
+        });
+
+        // 2. If any adjustment happened, we need to redistribute the coupon properly
+        let currentTotalDiscount = 0;
+        const appliedCouponCode = durations[0]?.coupon_code || null;
+
+        if (anyAdjustments && appliedCouponCode) {
+          const coupon = await models.CouponCode.findOne({ couponCode: appliedCouponCode }).session(session);
+          if (coupon) {
+            if (coupon.discountType === 'flat') {
+              currentTotalDiscount = Math.min(coupon.discount, totalGrossCost);
             } else {
-              newCouponDiscount = Math.round((d.coupon_discount_value / 100) * newTotalPrice);
+              currentTotalDiscount = Math.round((coupon.discount / 100) * totalGrossCost);
             }
           }
-
-          // Update memory and DB
-          d.start_date = effectiveStartDate;
-          d.end_date = newEndDate;
-          d.total_price = newTotalPrice;
-          d.pricing_breakdown = newBreakdown;
-          d.coupon_discount_amount = newCouponDiscount;
-          d.final_price = Math.max(0, newTotalPrice - newCouponDiscount);
-          d.duration_days = newTotalDays;
-          d.quarters_covered = [...new Set(newSegments.map(s => s.quarter))];
-
-          await models.CategoryRequestDuration.updateOne(
-            { _id: d._id },
-            {
-              $set: {
-                start_date: effectiveStartDate,
-                end_date: newEndDate,
-                total_price: d.total_price,
-                pricing_breakdown: d.pricing_breakdown,
-                coupon_discount_amount: d.coupon_discount_amount,
-                final_price: d.final_price,
-                duration_days: d.duration_days,
-                quarters_covered: d.quarters_covered
-              }
-            },
-            { session }
-          );
         }
-      }
 
-      const totalCost = durations.reduce((sum, d) => sum + (d.total_price || 0), 0);
-      const totalDeduction = durations.reduce((sum, d) => sum + (d.final_price != null && d.final_price > 0 ? d.final_price : d.total_price || 0), 0);
-      const totalCouponDiscount = durations.reduce((sum, d) => sum + (d.coupon_discount_amount || 0), 0);
-      const appliedCouponCode = durations[0]?.coupon_code || null;
+        // 3. Final summation
+        for (const d of durations) {
+          const idStr = d._id.toString();
+          const hasRecalculated = Object.prototype.hasOwnProperty.call(updatedSlotPrices, idStr);
 
-      if (anyAdjustments) {
-        console.log('[approveAdRequest] Recalculated pricing for approval. Deduction:', totalDeduction);
-      }
-      console.log('[approveAdRequest] Total ad cost:', totalCost, 'After coupon discount:', totalDeduction, 'Coupon:', appliedCouponCode);
+          let finalPriceForThisSlot = 0;
+          let discountForThisSlot = 0;
 
-      // ── Check seller wallet balance ──
-      const sellerId = categoryRequest.seller_id;
-      let wallet = await SellerWallet.findOne({ seller_id: sellerId }).session(session);
-      if (!wallet) {
-        wallet = (await SellerWallet.create([{ seller_id: sellerId, balance: 0 }], { session }))[0];
-      }
-
-      if (wallet.balance < totalDeduction) {
-        throw new Error(
-          `Insufficient wallet balance. Seller has ₹${wallet.balance} but ₹${totalDeduction} is required.`
-        );
-      }
-
-      // ── Deduct from wallet (discounted amount) ──
-      wallet.balance -= totalDeduction;
-      await wallet.save({ session });
-      console.log('[approveAdRequest] Wallet deducted. New balance:', wallet.balance);
-
-      // ── Create debit transaction record ──
-      const categoryName = categoryRequest.category_id?.name || 'Unknown';
-      const slotNames = durations.map(d => d.slot).join(', ');
-      const couponDesc = appliedCouponCode ? ` | Coupon: ${appliedCouponCode} (-₹${totalCouponDiscount})` : '';
-      await WalletTransaction.create([{
-        seller_id: sellerId,
-        type: 'debit',
-        amount: totalDeduction,
-        source: 'ad_deduction',
-        description: `Ad approved for ${categoryName} (${slotNames})${couponDesc}`,
-        status: 'success',
-      }], { session });
-
-      console.log('[approveAdRequest] Wallet transaction created');
-
-      // ── Coupon usage tracking ──
-      if (appliedCouponCode) {
-        const coupon = await models.CouponCode.findOne({ couponCode: appliedCouponCode });
-        if (coupon) {
-          // Increment global usedCount
-          await models.CouponCode.updateOne(
-            { _id: coupon._id },
-            { $inc: { usedCount: 1 } },
-            { session }
-          );
-          // Create CouponUsage record
-          await CouponUsage.create([{
-            coupon_id: coupon._id,
-            user_id: sellerId,
-            category_request_id: requestId,
-            discount_amount: totalCouponDiscount,
-          }], { session });
-          console.log('[approveAdRequest] CouponUsage recorded for coupon:', appliedCouponCode);
-        }
-      }
-
-      // Update all durations status to 'approved'
-      await models.CategoryRequestDuration.updateMany(
-        { category_request_id: requestId },
-        { $set: { status: 'approved' } },
-        { session }
-      );
-
-      console.log('[approveAdRequest] Durations updated to approved status');
-
-      // Update category request status + store total_cost
-      const updatedRequest = await models.CategoryRequest.findByIdAndUpdate(
-        requestId,
-        {
-          $set: {
-            status: 'approved',
-            approved_by: adminId,
-            approved_date: new Date(),
-            total_cost: totalDeduction
+          if (hasRecalculated) {
+            // If a date change occurred, use the NEW calculated price and proportional discount
+            const slotBasePrice = updatedSlotPrices[idStr].totalPrice;
+            discountForThisSlot = totalGrossCost > 0 ? Math.round(currentTotalDiscount * (slotBasePrice / totalGrossCost)) : 0;
+            finalPriceForThisSlot = Math.max(0, slotBasePrice - discountForThisSlot);
+          } else {
+            // IF NO ADJUSTMENT: Trust the existing final_price in DB exactly (this matches the modal 100%)
+            finalPriceForThisSlot = (d.final_price != null && d.final_price > 0) ? d.final_price : (d.total_price || 0);
+            discountForThisSlot = Math.max(0, (d.total_price || 0) - finalPriceForThisSlot);
           }
-        },
-        { new: true, session }
-      );
 
-      await session.commitTransaction();
-      session.endSession();
+          d.computed_final = finalPriceForThisSlot;
+          d.computed_discount = discountForThisSlot;
+          totalDeduction += finalPriceForThisSlot;
+          totalCouponDiscount += discountForThisSlot;
+        }
 
-      const couponMsg = appliedCouponCode ? ` (Coupon: ${appliedCouponCode}, Discount: ₹${totalCouponDiscount})` : '';
-      console.log('[approveAdRequest] Approved successfully. Deducted ₹' + totalDeduction + couponMsg);
+        // ── Update Database ──
+        if (anyAdjustments) {
+          console.log('[approveAdRequest] Recalculated pricing for approval. Deduction:', totalDeduction);
+          for (const d of durations) {
+            const idStr = d._id.toString();
+            const reCalc = updatedSlotPrices[idStr];
+            // eslint-disable-next-line no-await-in-loop
+            await models.CategoryRequestDuration.updateOne(
+              { _id: d._id },
+              {
+                $set: {
+                  status: 'approved',
+                  final_price: d.computed_final,
+                  coupon_discount_amount: d.computed_discount,
+                  ...(reCalc ? {
+                    start_date: effectiveStartDate,
+                    end_date: reCalc.endDate,
+                    total_price: reCalc.totalPrice,
+                    pricing_breakdown: reCalc.breakdown,
+                    duration_days: reCalc.durationDays
+                  } : {})
+                }
+              },
+              { session }
+            );
+          }
+        } else {
+          await models.CategoryRequestDuration.updateMany(
+            { category_request_id: requestId },
+            { $set: { status: 'approved' } },
+            { session }
+          );
+        }
 
-      return {
-        success: true,
-        message: `Ad request approved. ₹${totalDeduction} deducted from seller wallet.${couponMsg}`,
-        data: updatedRequest
-      };
-    } catch (err) {
-      console.error('[approveAdRequest] ERROR:', err.message);
-      await session.abortTransaction();
-      session.endSession();
-      throw new Error('Failed to approve request: ' + err.message);
+        console.log('[approveAdRequest] Total ad cost:', totalGrossCost, 'After coupon discount:', totalDeduction, 'Coupon:', appliedCouponCode);
+
+        // ── Settle Wallet Hold Logic ──
+        const sellerId = categoryRequest.seller_id;
+        let wallet = await SellerWallet.findOne({ seller_id: sellerId }).session(session);
+        if (!wallet) {
+          wallet = (await SellerWallet.create([{ seller_id: sellerId, balance: 0, hold_balance: 0 }], { session }))[0];
+        }
+
+        const heldAmount = categoryRequest.held_amount || 0;
+        if (wallet.balance < totalDeduction) {
+          throw new Error(`Insufficient balance to settle ad. Balance: ₹${wallet.balance}, Required: ₹${totalDeduction}`);
+        }
+
+        wallet.balance -= totalDeduction;
+        wallet.hold_balance = Math.max(0, (wallet.hold_balance || 0) - heldAmount);
+        await wallet.save({ session });
+
+        // ── Create debit transaction record ──
+        const categoryName = categoryRequest.category_id?.name || 'Unknown';
+        const slotNames = durations.map(d => d.slot).join(', ');
+        const couponDesc = appliedCouponCode ? ` | Coupon: ${appliedCouponCode} (-₹${totalCouponDiscount})` : '';
+        await WalletTransaction.create([{
+          seller_id: sellerId,
+          type: 'debit',
+          amount: totalDeduction,
+          source: 'ad_deduction',
+          description: `Ad approved for ${categoryName} (${slotNames})${couponDesc}`,
+          status: 'success',
+        }], { session });
+
+        // ── Coupon usage tracking ──
+        if (appliedCouponCode) {
+          const coupon = await models.CouponCode.findOne({ couponCode: appliedCouponCode });
+          if (coupon) {
+            await models.CouponCode.updateOne({ _id: coupon._id }, { $inc: { usedCount: 1 } }, { session });
+            await CouponUsage.create([{
+              coupon_id: coupon._id,
+              user_id: sellerId,
+              category_request_id: requestId,
+              discount_amount: totalCouponDiscount,
+            }], { session });
+          }
+        }
+
+        const updatedRequest = await models.CategoryRequest.findByIdAndUpdate(
+          requestId,
+          { $set: { status: 'approved', approved_by: adminId, approved_date: new Date(), total_cost: totalDeduction } },
+          { new: true, session }
+        );
+
+        await session.commitTransaction();
+        session.endSession();
+        return { success: true, message: `Ad request approved. ₹${totalDeduction} deducted.`, data: updatedRequest };
+      } catch (err) {
+        await session.abortTransaction();
+        session.endSession();
+        if ((err.hasErrorLabel && err.hasErrorLabel('TransientTransactionError') || err.code === 112) && retries > 1) {
+          retries--;
+          continue;
+        }
+
+        console.error('[approveAdRequest] ERROR:', err.message, err.stack);
+        throw new Error('Failed to approve request: ' + err.message);
+      }
     }
   }),
 
@@ -1937,6 +1972,18 @@ export const Mutation = {
         },
         { session }
       );
+
+      // ── Release Wallet Hold Logic ──
+      const sellerId = categoryRequest.seller_id;
+      const heldAmount = categoryRequest.held_amount || 0;
+      if (heldAmount > 0) {
+        let wallet = await SellerWallet.findOne({ seller_id: sellerId }).session(session);
+        if (wallet) {
+          wallet.hold_balance = Math.max(0, (wallet.hold_balance || 0) - heldAmount);
+          await wallet.save({ session });
+          console.log('[rejectAdRequest] Released hold of ₹' + heldAmount + '. New hold:', wallet.hold_balance);
+        }
+      }
 
       // Update category request status
       const updatedRequest = await models.CategoryRequest.findByIdAndUpdate(

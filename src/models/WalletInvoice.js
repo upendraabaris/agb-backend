@@ -45,6 +45,9 @@ const WalletInvoiceSchema = new mongoose.Schema(
     buyerName: {
       type: String,
     },
+    buyerCompany: {
+      type: String,
+    },
     buyerEmail: {
       type: String,
     },
@@ -53,16 +56,16 @@ const WalletInvoiceSchema = new mongoose.Schema(
     },
     // GST breakdown snapshot
     baseAmount: { type: Number },       // wallet credit amount (before GST)
-    gstRate:    { type: Number },       // 18
-    gstType:    { type: String, enum: ['cgst_sgst', 'igst'] },
-    cgstRate:   { type: Number },       // 9 or 0
+    gstRate: { type: Number },       // 18
+    gstType: { type: String, enum: ['cgst_sgst', 'igst'] },
+    cgstRate: { type: Number },       // 9 or 0
     cgstAmount: { type: Number },
-    sgstRate:   { type: Number },       // 9 or 0
+    sgstRate: { type: Number },       // 9 or 0
     sgstAmount: { type: Number },
-    igstRate:   { type: Number },       // 0 or 18
+    igstRate: { type: Number },       // 0 or 18
     igstAmount: { type: Number },
-    totalAmount:{ type: Number },       // baseAmount + all GST
-    buyerState:   { type: String },
+    totalAmount: { type: Number },       // baseAmount + all GST
+    buyerState: { type: String },
     companyState: { type: String },
   },
   { timestamps: true }

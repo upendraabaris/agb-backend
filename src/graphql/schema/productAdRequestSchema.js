@@ -11,6 +11,8 @@ export const ProductAdRequestSchema = gql`
     approved_by: ID
     approved_date: String
     rejection_reason: String
+    total_cost: Float
+    held_amount: Float
     createdAt: String
     updatedAt: String
   }

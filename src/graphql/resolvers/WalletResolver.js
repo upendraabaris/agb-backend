@@ -57,6 +57,7 @@ export const Query = {
             return {
                 id: wallet._id.toString(),
                 balance: wallet.balance,
+                hold_balance: wallet.hold_balance || 0,
             };
         } catch (err) {
             console.error("[getMyWallet] error:", err);
@@ -138,6 +139,7 @@ export const Query = {
                     paymentGateway: inv.paymentGateway,
                     description: inv.description || null,
                     buyerName: inv.buyerName || null,
+                    buyerCompany: inv.buyerCompany || null,
                     buyerEmail: inv.buyerEmail || null,
                     buyerPhone: inv.buyerPhone || null,
                     baseAmount: inv.baseAmount ?? null,
@@ -189,6 +191,7 @@ export const Query = {
                     paymentGateway: invoice.paymentGateway,
                     description: invoice.description || null,
                     buyerName: invoice.buyerName || null,
+                    buyerCompany: invoice.buyerCompany || null,
                     buyerEmail: invoice.buyerEmail || null,
                     buyerPhone: invoice.buyerPhone || null,
                     baseAmount: invoice.baseAmount ?? null,
@@ -335,7 +338,7 @@ export const Mutation = {
 
                 const buildBuyerAddress = (s) => {
                     if (!s) return null;
-                    const parts = [s.fullAddress || s.address, s.city, s.state, s.pincode].filter(Boolean);
+                    const parts = [s.fullAddress || s.address, s.city, s.state, s.pincode, s.companyName].filter(Boolean);
                     return parts.join(", ") || null;
                 };
 
@@ -356,6 +359,7 @@ export const Mutation = {
                     paymentGateway: inv.paymentGateway,
                     description: inv.description || null,
                     buyerName: inv.buyerName || null,
+                    buyerCompany: inv.buyerCompany || null,
                     buyerEmail: inv.buyerEmail || null,
                     buyerPhone: inv.buyerPhone || null,
                     buyerAddress: buildBuyerAddress(seller),
@@ -397,6 +401,7 @@ export const Mutation = {
                 const invoice = await _createInvoiceForTransaction({
                     transaction,
                     user,
+                    buyerCompany: seller?.companyName || "",
                     paymentMode: transaction.ccav_payment_mode || "",
                     gatewayTransactionId: transaction.ccav_tracking_id || "",
                     gstData: transaction.gstType ? {
@@ -458,11 +463,14 @@ export const Mutation = {
                         continue;
                     }
 
+                    const sellerProfile = await models.Seller.findOne({ user: txDoc.seller_id }).lean();
+
                     // Use a mutable copy so the service can set invoice_id and save it
                     const txMutable = await models.WalletTransaction.findById(txDoc._id);
                     await _createInvoiceForTransaction({
                         transaction: txMutable,
                         user,
+                        buyerCompany: sellerProfile?.companyName || "",
                         paymentMode: txMutable.ccav_payment_mode || "",
                         gatewayTransactionId: txMutable.ccav_tracking_id || "",
                     });
